@@ -1,5 +1,7 @@
 # screener2 — Solana new-pool screener
 
+[![CI](https://github.com/lyan88/solana-screener/actions/workflows/ci.yml/badge.svg)](https://github.com/lyan88/solana-screener/actions/workflows/ci.yml)
+
 Screener kecil untuk pool baru Solana. Tugasnya satu: menemukan token yang
 lolos filter, lalu mengirim satu alert ke Telegram. **Tidak memegang private
 key dan tidak melakukan swap.**
@@ -63,6 +65,8 @@ Cron menjalankan tracker tiap 5 menit dan laporan tiap 07:00 UTC.
 ## Menjalankan
 
 ```bash
+git clone https://github.com/lyan88/solana-screener.git
+cd solana-screener
 cp .env.example .env      # isi token & chat id Telegram
 python3 scanner.py --once --dry-run --verbose
 python3 scanner.py --test-telegram
@@ -99,6 +103,25 @@ sudo -u screener python3 /opt/screener2/doctor.py
 sudo -u screener python3 /opt/screener2/scanner.py --once --dry-run --verbose
 tail -f /opt/screener2/logs/scan.log
 ```
+
+## Sinkronisasi GitHub
+
+Repo: https://github.com/lyan88/solana-screener
+
+Di VPS pengembangan, `deploy/git-sync.sh` dijalankan cron tiap 15 menit:
+
+- commit & push hanya kalau ada perubahan
+- unit test wajib lolos sebelum push
+- `.env`, `data/`, dan `logs/` tidak pernah ikut
+
+Menarik update dari GitHub ke produksi (manual, setelah CI hijau):
+
+```bash
+sudo ./deploy/update.sh
+```
+
+Skrip itu melakukan `git pull --ff-only` sebagai pemilik repo, lalu
+menjalankan `deploy/install.sh --force`.
 
 ## Batasan yang perlu diketahui
 
