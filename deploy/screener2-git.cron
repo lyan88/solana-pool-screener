@@ -1,0 +1,6 @@
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+CRON_TZ=UTC
+
+# Auto-sync VPS -> GitHub tiap 15 menit. Hanya push kalau unit test lolos.
+*/15 * * * * ubuntu cd /home/ubuntu/screener2 && flock -n /tmp/screener2-git.lock ./deploy/git-sync.sh >> /home/ubuntu/screener2-git.log 2>&1
