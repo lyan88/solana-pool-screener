@@ -230,6 +230,19 @@ class ScoringTests(unittest.TestCase):
             )
         )
         self.assertTrue(filters.near_miss({"reasons": ["trades_unavailable"]}))
+        # Top10 jauh tetap gugur walau LP belum terbaca.
+        self.assertFalse(
+            filters.near_miss(
+                {"reasons": ["top10", "lp"], "top10_pct": 95.0,
+                 "lp_status": "unknown", "lp_pct": None}
+            )
+        )
+        self.assertTrue(
+            filters.near_miss(
+                {"reasons": ["top10", "lp"], "top10_pct": None,
+                 "lp_status": "unknown", "lp_pct": None}
+            )
+        )
 
 
 if __name__ == "__main__":

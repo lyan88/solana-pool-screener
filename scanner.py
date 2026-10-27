@@ -196,7 +196,7 @@ def _process_pool(conn, pool, now, dry_run, verbose, stats):
 
 def _process_watchlist(conn, now, dry_run, verbose, stats, already_seen):
     """Evaluasi ulang kandidat near-miss yang sudah jatuh tempo."""
-    now_ts = int(now.timestamp())
+    now_ts = int(time.time())
     db.watch_expire(conn, now_ts)
     rows = db.watch_due(conn, now_ts, limit=config.WATCH_MAX_PER_ROUND)
     for watch in rows:

@@ -370,39 +370,39 @@ def near_miss(row):
     """
     Apakah penolakan ini masih mungkin membaik dalam beberapa menit?
 
-    Hanya alasan yang bisa berubah sendiri yang dipantau. Mint/freeze aktif
-    atau pool mati tidak akan berubah, jadi langsung dibuang.
+    Semua alasan yang ada harus "masih mungkin", bukan hanya salah satu.
+    Contoh: top10 95% + LP belum terbaca tetap dibuang, karena top10 tidak
+    akan turun 60 poin dalam beberapa menit.
     """
     reasons = set(row.get("reasons") or [])
     if not reasons or reasons & {"check_authorities", "pool_dead"}:
         return False
 
-    if "trades_unavailable" in reasons:
-        return True
-
     if "top10" in reasons:
         pct = row.get("top10_pct")
-        if pct is None:
-            return True
-        if config.TOP10_MAX_PCT <= float(pct) <= (
-            config.TOP10_MAX_PCT + config.WATCH_TOP10_MARGIN_PCT
+        if pct is not None and not (
+            config.TOP10_MAX_PCT
+            <= float(pct)
+            <= config.TOP10_MAX_PCT + config.WATCH_TOP10_MARGIN_PCT
         ):
-            return True
+            return False
 
     if "lp" in reasons:
         status = row.get("lp_status")
         pct = row.get("lp_pct")
         if status == "unknown":
-            return True
-        if status == "unlocked" and pct is not None and float(pct) >= config.WATCH_LP_MIN_PCT:
-            return True
+            pass
+        elif status == "unlocked" and pct is not None and float(pct) >= config.WATCH_LP_MIN_PCT:
+            pass
+        else:
+            return False
 
     if "buyers" in reasons:
         buyers = row.get("buyers2") or 0
-        if buyers >= config.MIN_UNIQUE_BUYERS * config.WATCH_BUYERS_RATIO:
-            return True
+        if buyers < config.MIN_UNIQUE_BUYERS * config.WATCH_BUYERS_RATIO:
+            return False
 
-    return False
+    return True
 
 
 def fmt_usd(value):
