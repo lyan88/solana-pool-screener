@@ -208,6 +208,8 @@ def show_status():
     stats = db.stats(conn)
     print("alert            : %d (%d/24 jam)" % (stats["alerts"], stats["alerts_24h"]))
     print("scan             : %d/24 jam" % stats["scans_24h"])
+    print("antrean alert    : %d siap dikirim" % stats["queue_pending"])
+    print("watchlist        : %d dipantau" % stats["watch_watching"])
     print("outcome pending  : %d" % stats["pending_outcomes"])
     for status, count in sorted(db.outcome_status(conn).items()):
         print("  %-14s %d" % (status, count))

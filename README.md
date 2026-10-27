@@ -33,11 +33,29 @@ Semua angka bisa diubah di `.env` (lihat `.env.example`).
    melaporkan lock permanen ≥ 99%, angka itu dipakai lebih dulu.
 5. Hanya kalau lolos semua, ambil daftar trade pool dan hitung **unique
    wallet** yang membeli dalam 120 detik terakhir.
-6. Kalau lolos, kirim alert Telegram sekali per mint. Token yang belum lolos
-   tetap dipantau pada putaran berikutnya sampai umurnya 10 menit.
+6. Kalau lolos, alert masuk **antrean berprioritas** lalu dikirim sesuai
+   kuota Telegram. Kandidat yang hampir lolos masuk **watchlist** dan
+   dievaluasi ulang tiap 2 menit sampai umurnya 10 menit.
 
 Deteksi berjalan tiap 2 menit lewat cron, jadi satu token bisa dievaluasi
 beberapa kali ketika holder makin tersebar.
+
+### Antrean alert
+
+Alert tidak langsung dibuang kalau kuota Telegram penuh:
+
+- disimpan di tabel `alert_queue` dengan skor prioritas
+- dikirim saat kuota tersedia, skor tertinggi lebih dulu
+- kedaluwarsa setelah 15 menit supaya tidak mengirim sinyal basi
+- kalau tertunda lebih dari 90 detik, harga entry tidak dipakai lagi;
+  tracker memakai harga lilin saat alert benar-benar terkirim
+
+### Watchlist
+
+Kandidat yang ditolak karena alasan yang masih bisa membaik (top10 dekat
+ambang, LP hampir terkunci, LP belum terbaca, buyer kurang sedikit, trades
+gagal) dipantau ulang tanpa harus muncul lagi di `new_pools`. Batasnya
+`WATCH_TTL_SEC` (10 menit) dan `WATCH_MAX_CHECKS` (5 kali).
 
 ## Pengukuran hasil
 
@@ -140,8 +158,8 @@ menjalankan `deploy/install.sh --force`.
   lagi pada putaran berikutnya.
 - **Tidak ada jaminan profit.** Screener hanya menyaring; keputusan beli dan
   manajemen risiko tetap di tangan kamu.
-- **Batas alert** default 20 pesan/jam dan 100/hari supaya Telegram tidak
-  dibanjiri saat pasar ramai. Ubah `TELEGRAM_MAX_PER_HOUR` /
+- **Batas alert** default 40 pesan/jam dan 400/hari. Alert yang tidak bisa
+  dikirim masuk antrean, bukan dibuang. Ubah `TELEGRAM_MAX_PER_HOUR` /
   `TELEGRAM_MAX_PER_DAY` kalau perlu.
 
 ## Struktur
@@ -164,6 +182,8 @@ Data disimpan di `data/screener2.db`:
 
 - `evaluations` — kandidat yang pernah dievaluasi, alasan lolos/tolak
 - `alerts` — satu baris per mint yang sudah dikirim
+- `alert_queue` — antrean alert berprioritas yang belum terkirim
+- `watchlist` — kandidat near-miss yang dipantau ulang
 - `scans` — ringkasan tiap putaran (pool, kandidat, alert, error)
 - `outcomes` — hasil per alert per horizon (MFE/MAE)
 - `security_cache` — laporan Rugcheck, TTL 120 detik

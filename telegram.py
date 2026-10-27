@@ -10,6 +10,7 @@ import urllib.request
 from datetime import datetime, timezone
 
 import config
+import db
 import filters
 
 STATE_PATH = config.DATA_DIR / "telegram_state.json"
@@ -78,6 +79,78 @@ def send(text, dry_run=None, disable_preview=True, bypass_limits=False):
     state["sent"] = state["sent"][-500:]
     _save_state(state)
     return True, "terkirim"
+
+
+def _delayed_message(message, delay_sec):
+    if delay_sec < 120:
+        return message
+    minutes = max(1, int(delay_sec // 60))
+    return (
+        "⏳ <i>Tertunda %dm dari deteksi — harga bisa sudah berubah.</i>\n" % minutes
+    ) + message
+
+
+def drain_queue(conn, dry_run=None, max_send=None):
+    """
+    Kirim antrean alert, skor tertinggi dulu.
+
+    Berhenti saat kuota/jeda tercapai supaya sisa antrean dicoba lagi pada
+    putaran berikutnya. Alert yang tertunda lama tidak memakai harga lama
+    sebagai entry (biar outcome tidak menyesatkan).
+    """
+    dry_run = config.DRY_RUN if dry_run is None else dry_run
+    max_send = config.ALERT_DRAIN_MAX if max_send is None else int(max_send)
+    db.expire_queue(conn)
+    rows = db.pending_queue(conn, limit=max_send)
+
+    sent = failed = 0
+    for row in rows:
+        if sent >= max_send:
+            break
+        delay = max(0, int(time.time()) - int(row["created_at"]))
+        text = _delayed_message(row["message"], delay)
+        if dry_run:
+            print(text)
+            print()
+            continue
+
+        ok, reason = send(text)
+        if not ok and reason.startswith("jeda minimum"):
+            time.sleep(max(0.5, config.TELEGRAM_MIN_INTERVAL_SEC))
+            ok, reason = send(text)
+
+        if ok:
+            sent_at = int(time.time())
+            price = row["price_usd"]
+            if delay > config.ALERT_QUEUE_MAX_PRICE_AGE_SEC:
+                price = None
+            recorded = db.record_alert(
+                conn,
+                {
+                    "mint": row["mint"], "pool": row["pool"], "name": row["name"],
+                    "symbol": row["symbol"], "created_at": sent_at,
+                    "age_sec": row["age_sec"], "liq_usd": row["liq_usd"],
+                    "mc_usd": row["mc_usd"], "buyers2": row["buyers2"],
+                    "top10_pct": row["top10_pct"], "lp_status": row["lp_status"],
+                    "price_usd": price, "message": row["message"],
+                },
+            )
+            db.mark_queue_sent(conn, row["mint"])
+            if recorded:
+                db.mark_evaluation_alerted(conn, row["mint"], sent_at)
+                sent += 1
+            continue
+
+        if "batas" in reason:
+            # Kuota penuh: jangan buang, coba lagi setelah kuota pulih.
+            db.mark_queue_blocked(conn, row["mint"], reason)
+            break
+
+        final = (row["attempts"] + 1) >= config.ALERT_QUEUE_MAX_ATTEMPTS
+        db.mark_queue_failed(conn, row["mint"], reason, final=final)
+        failed += 1
+
+    return {"sent": sent, "failed": failed}
 
 
 def _e(value):

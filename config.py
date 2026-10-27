@@ -126,9 +126,32 @@ TELEGRAM_BOT_TOKEN = _s("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = _s("TELEGRAM_CHAT_ID")
 TELEGRAM_ENABLED = _b("TELEGRAM_ENABLED", True)
 TELEGRAM_MIN_INTERVAL_SEC = _f("TELEGRAM_MIN_INTERVAL_SEC", 3.0)
-TELEGRAM_MAX_PER_HOUR = _i("TELEGRAM_MAX_PER_HOUR", 20)
-TELEGRAM_MAX_PER_DAY = _i("TELEGRAM_MAX_PER_DAY", 100)
+# Batas lama (20/jam, 100/hari) membuat alert hilang saat jam sibuk.
+# Antrean di bawah tetap mencegah spam, jadi batas bisa lebih longgar.
+TELEGRAM_MAX_PER_HOUR = _i("TELEGRAM_MAX_PER_HOUR", 40)
+TELEGRAM_MAX_PER_DAY = _i("TELEGRAM_MAX_PER_DAY", 400)
 DRY_RUN = _b("DRY_RUN", False)
+
+# ---------------------------------------------------------------- antrean alert
+# Alert yang lolos tapi belum bisa dikirim (kuota/jeda) disimpan dulu, lalu
+# dikirim berdasarkan skor tertinggi. TTL mencegah alert basi ikut terkirim.
+ALERT_QUEUE_TTL_SEC = _i("ALERT_QUEUE_TTL_SEC", 900)
+ALERT_QUEUE_MAX_ATTEMPTS = _i("ALERT_QUEUE_MAX_ATTEMPTS", 3)
+ALERT_DRAIN_MAX = _i("ALERT_DRAIN_MAX", 6)
+# Kalau alert tertunda lebih lama dari ini, harga entry tidak dipakai lagi;
+# tracker memakai harga lilin saat alert benar-benar terkirim.
+ALERT_QUEUE_MAX_PRICE_AGE_SEC = _i("ALERT_QUEUE_MAX_PRICE_AGE_SEC", 90)
+
+# ---------------------------------------------------------------- watchlist
+# Kandidat yang hampir lolos dipantau ulang sebentar, supaya tidak hilang
+# begitu saja saat keluar dari halaman new_pools GeckoTerminal.
+WATCH_TTL_SEC = _i("WATCH_TTL_SEC", 600)
+WATCH_INTERVAL_SEC = _i("WATCH_INTERVAL_SEC", 120)
+WATCH_MAX_PER_ROUND = _i("WATCH_MAX_PER_ROUND", 4)
+WATCH_MAX_CHECKS = _i("WATCH_MAX_CHECKS", 5)
+WATCH_TOP10_MARGIN_PCT = _f("WATCH_TOP10_MARGIN_PCT", 5.0)
+WATCH_LP_MIN_PCT = _f("WATCH_LP_MIN_PCT", 90.0)
+WATCH_BUYERS_RATIO = _f("WATCH_BUYERS_RATIO", 0.6)
 
 # ---------------------------------------------------------------- operasional
 SCAN_INTERVAL_SEC = _i("SCAN_INTERVAL_SEC", 120)

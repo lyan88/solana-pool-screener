@@ -86,6 +86,47 @@ CREATE TABLE IF NOT EXISTS security_cache (
     fetched_at INTEGER,
     report TEXT
 );
+
+CREATE TABLE IF NOT EXISTS alert_queue (
+    mint TEXT PRIMARY KEY,
+    pool TEXT,
+    name TEXT,
+    symbol TEXT,
+    age_sec INTEGER,
+    liq_usd REAL,
+    mc_usd REAL,
+    buyers2 INTEGER,
+    top10_pct REAL,
+    lp_status TEXT,
+    price_usd REAL,
+    message TEXT NOT NULL,
+    score REAL NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    last_error TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    sent_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_queue_due
+    ON alert_queue(status, expires_at, score, created_at);
+
+CREATE TABLE IF NOT EXISTS watchlist (
+    mint TEXT PRIMARY KEY,
+    pool TEXT NOT NULL,
+    name TEXT,
+    symbol TEXT,
+    dex TEXT,
+    first_seen INTEGER,
+    last_seen INTEGER,
+    next_check INTEGER,
+    expires_at INTEGER,
+    checks INTEGER NOT NULL DEFAULT 0,
+    best_score REAL NOT NULL DEFAULT 0,
+    reasons TEXT,
+    status TEXT NOT NULL DEFAULT 'watching'
+);
+CREATE INDEX IF NOT EXISTS idx_watch_due ON watchlist(status, next_check);
 """
 
 
@@ -139,6 +180,209 @@ def has_alerted(conn, mint):
     return row is not None
 
 
+def has_pending_alert(conn, mint, now=None):
+    """True kalau mint masih menunggu di antrean dan belum kedaluwarsa."""
+    now = int(time.time()) if now is None else int(now)
+    row = conn.execute(
+        "SELECT 1 FROM alert_queue "
+        "WHERE mint = ? AND status = 'pending' AND expires_at > ?",
+        (mint, now),
+    ).fetchone()
+    return row is not None
+
+
+def queue_alert(conn, row, score, message, ttl=None):
+    """Simpan alert untuk dikirim. Tidak menimpa alert yang sudah terkirim."""
+    now = int(time.time())
+    ttl = config.ALERT_QUEUE_TTL_SEC if ttl is None else ttl
+    expires_at = now + max(60, int(ttl))
+    cur = conn.execute(
+        """
+        INSERT INTO alert_queue(
+            mint, pool, name, symbol, age_sec, liq_usd, mc_usd, buyers2,
+            top10_pct, lp_status, price_usd, message, score, created_at,
+            expires_at, status
+        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')
+        ON CONFLICT(mint) DO UPDATE SET
+            pool=excluded.pool, name=excluded.name, symbol=excluded.symbol,
+            age_sec=excluded.age_sec, liq_usd=excluded.liq_usd,
+            mc_usd=excluded.mc_usd, buyers2=excluded.buyers2,
+            top10_pct=excluded.top10_pct, lp_status=excluded.lp_status,
+            price_usd=excluded.price_usd, message=excluded.message,
+            score=excluded.score, expires_at=excluded.expires_at
+        WHERE alert_queue.status = 'pending'
+        """,
+        (
+            row["mint"], row.get("pool"), row.get("name"), row.get("symbol"),
+            row.get("age_sec"), row.get("liq_usd"), row.get("mc_usd"),
+            row.get("buyers2"), row.get("top10_pct"), row.get("lp_status"),
+            row.get("price_usd"), message, float(score or 0), now, expires_at,
+        ),
+    )
+    conn.commit()
+    return cur.rowcount > 0
+
+
+def pending_queue(conn, now=None, limit=None):
+    """Antrean yang siap dikirim, skor tertinggi lebih dulu."""
+    now = int(time.time()) if now is None else int(now)
+    limit = config.ALERT_DRAIN_MAX if limit is None else int(limit)
+    return conn.execute(
+        """
+        SELECT * FROM alert_queue
+        WHERE status = 'pending' AND expires_at > ?
+        ORDER BY score DESC, created_at ASC
+        LIMIT ?
+        """,
+        (now, limit),
+    ).fetchall()
+
+
+def mark_queue_sent(conn, mint):
+    conn.execute(
+        "UPDATE alert_queue SET status='sent', sent_at=?, attempts=attempts+1, "
+        "last_error=NULL WHERE mint=?",
+        (int(time.time()), mint),
+    )
+    conn.commit()
+
+
+def mark_queue_blocked(conn, mint, error):
+    """Kuota/jeda: biarkan pending tanpa menambah percobaan."""
+    conn.execute(
+        "UPDATE alert_queue SET last_error=? WHERE mint=? AND status='pending'",
+        (str(error)[:300], mint),
+    )
+    conn.commit()
+
+
+def mark_queue_failed(conn, mint, error, final=False):
+    conn.execute(
+        """
+        UPDATE alert_queue
+        SET attempts = attempts + 1,
+            last_error = ?,
+            status = CASE WHEN ? THEN 'failed' ELSE 'pending' END
+        WHERE mint = ? AND status = 'pending'
+        """,
+        (str(error)[:300], 1 if final else 0, mint),
+    )
+    conn.commit()
+
+
+def expire_queue(conn, now=None):
+    now = int(time.time()) if now is None else int(now)
+    cur = conn.execute(
+        "UPDATE alert_queue SET status='expired', last_error='kedaluwarsa' "
+        "WHERE status='pending' AND expires_at <= ?",
+        (now,),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def queue_stats(conn, now=None):
+    now = int(time.time()) if now is None else int(now)
+    rows = conn.execute(
+        "SELECT status, COUNT(*) AS n FROM alert_queue GROUP BY status"
+    ).fetchall()
+    out = {row["status"]: row["n"] for row in rows}
+    out["pending_live"] = conn.execute(
+        "SELECT COUNT(*) FROM alert_queue WHERE status='pending' AND expires_at > ?",
+        (now,),
+    ).fetchone()[0]
+    return out
+
+
+def watch_upsert(conn, pool, reasons, score, ttl, interval=None, now=None):
+    """Masukkan/segarkan kandidat near-miss ke watchlist."""
+    now = int(time.time()) if now is None else int(now)
+    interval = config.WATCH_INTERVAL_SEC if interval is None else int(interval)
+    expires_at = now + max(60, int(ttl))
+    conn.execute(
+        """
+        INSERT INTO watchlist(
+            mint, pool, name, symbol, dex, first_seen, last_seen,
+            next_check, expires_at, checks, best_score, reasons, status
+        ) VALUES(?,?,?,?,?,?,?,?,?,0,?,?,'watching')
+        ON CONFLICT(mint) DO UPDATE SET
+            pool=excluded.pool, name=excluded.name, symbol=excluded.symbol,
+            dex=excluded.dex, last_seen=excluded.last_seen,
+            next_check=excluded.next_check,
+            expires_at=MAX(watchlist.expires_at, excluded.expires_at),
+            best_score=MAX(watchlist.best_score, excluded.best_score),
+            reasons=excluded.reasons,
+            status=CASE WHEN watchlist.status IN ('alerted','queued')
+                        THEN watchlist.status ELSE 'watching' END
+        """,
+        (
+            pool["mint"], pool.get("pool"), pool.get("name"), pool.get("symbol"),
+            pool.get("dex"), now, now, now + interval, expires_at,
+            float(score or 0), json.dumps(list(reasons or [])),
+        ),
+    )
+    conn.commit()
+
+
+def watch_due(conn, now=None, limit=None):
+    now = int(time.time()) if now is None else int(now)
+    limit = config.WATCH_MAX_PER_ROUND if limit is None else int(limit)
+    return conn.execute(
+        """
+        SELECT * FROM watchlist
+        WHERE status='watching' AND next_check <= ? AND expires_at > ?
+        ORDER BY best_score DESC, next_check ASC
+        LIMIT ?
+        """,
+        (now, now, limit),
+    ).fetchall()
+
+
+def watch_touch(conn, mint, reasons, score, next_check=None):
+    now = int(time.time())
+    next_check = (now + config.WATCH_INTERVAL_SEC) if next_check is None else int(next_check)
+    if isinstance(reasons, str):
+        payload = reasons
+    else:
+        payload = json.dumps(list(reasons or []))
+    conn.execute(
+        """
+        UPDATE watchlist
+        SET last_seen=?, next_check=?, checks=checks+1,
+            best_score=MAX(best_score, ?), reasons=?
+        WHERE mint=? AND status='watching'
+        """,
+        (now, next_check, float(score or 0), payload, mint),
+    )
+    conn.commit()
+
+
+def watch_finish(conn, mint, status):
+    conn.execute(
+        "UPDATE watchlist SET status=?, last_seen=? WHERE mint=?",
+        (status, int(time.time()), mint),
+    )
+    conn.commit()
+
+
+def watch_expire(conn, now=None):
+    now = int(time.time()) if now is None else int(now)
+    cur = conn.execute(
+        "UPDATE watchlist SET status='expired' "
+        "WHERE status='watching' AND expires_at <= ?",
+        (now,),
+    )
+    conn.commit()
+    return cur.rowcount
+
+
+def watch_stats(conn):
+    rows = conn.execute(
+        "SELECT status, COUNT(*) AS n FROM watchlist GROUP BY status"
+    ).fetchall()
+    return {row["status"]: row["n"] for row in rows}
+
+
 def upsert_evaluation(conn, row):
     now = int(time.time())
     existing = conn.execute(
@@ -189,15 +433,25 @@ def record_alert(conn, row):
             """,
             (
                 row["mint"], row.get("pool"), row.get("name"), row.get("symbol"),
-                int(time.time()), row.get("age_sec"), row.get("liq_usd"),
-                row.get("mc_usd"), row.get("buyers2"), row.get("top10_pct"),
-                row.get("lp_status"), row.get("price_usd"), row.get("message"),
+                int(row.get("created_at") or time.time()), row.get("age_sec"),
+                row.get("liq_usd"), row.get("mc_usd"), row.get("buyers2"),
+                row.get("top10_pct"), row.get("lp_status"), row.get("price_usd"),
+                row.get("message"),
             ),
         )
         conn.commit()
         return True
     except sqlite3.IntegrityError:
         return False
+
+
+def mark_evaluation_alerted(conn, mint, ts=None):
+    conn.execute(
+        "UPDATE evaluations SET alerted_at=? "
+        "WHERE mint=? AND alerted_at IS NULL",
+        (int(ts or time.time()), mint),
+    )
+    conn.commit()
 
 
 def record_scan(conn, row):
@@ -309,6 +563,14 @@ def prune(conn, keep_days=None):
     conn.execute("DELETE FROM evaluations WHERE last_seen < ?", (cutoff,))
     conn.execute("DELETE FROM security_cache WHERE fetched_at < ?", (cutoff,))
     conn.execute("DELETE FROM scans WHERE ts < ?", (cutoff,))
+    conn.execute(
+        "DELETE FROM alert_queue WHERE status != 'pending' AND created_at < ?",
+        (cutoff,),
+    )
+    conn.execute(
+        "DELETE FROM watchlist WHERE status != 'watching' AND first_seen < ?",
+        (cutoff,),
+    )
     conn.commit()
 
 
@@ -325,5 +587,12 @@ def stats(conn):
         ).fetchone()[0],
         "pending_outcomes": conn.execute(
             "SELECT COUNT(*) FROM outcomes WHERE checked_at IS NULL"
+        ).fetchone()[0],
+        "queue_pending": conn.execute(
+            "SELECT COUNT(*) FROM alert_queue WHERE status='pending' AND expires_at > ?",
+            (int(time.time()),),
+        ).fetchone()[0],
+        "watch_watching": conn.execute(
+            "SELECT COUNT(*) FROM watchlist WHERE status='watching'"
         ).fetchone()[0],
     }

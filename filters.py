@@ -328,6 +328,73 @@ def check_buyers_window(trades, now, created_at=None):
     )
 
 
+def alert_score(pool, sec, buyers=None):
+    """
+    Skor pengurutan antrean (makin tinggi makin layak dikirim lebih dulu).
+
+    Bukan filter: hanya dipakai saat kuota terbatas. Rumusnya sengaja
+    konservatif dan memakai data yang sudah lolos filter.
+    """
+    score = 0.0
+
+    top10_pct = (sec or {}).get("top10_pct")
+    if top10_pct is not None:
+        score += max(0.0, config.TOP10_MAX_PCT - float(top10_pct)) * 2.0
+
+    buyer_count = (buyers or {}).get("buyers")
+    if buyer_count is None:
+        buyer_count = pool.get("buyers2") or pool.get("buyers5") or 0
+    score += min(float(buyer_count), 150.0) / 15.0
+
+    mc = float(pool.get("mc_usd") or 0)
+    liq = float(pool.get("liq_usd") or 0)
+    if mc > 0:
+        score += min(liq / mc, 0.6) * 20.0
+
+    age = float(pool.get("age_sec") or 0)
+    score += max(0.0, (config.MAX_AGE_SEC - age) / 60.0) * 0.5
+    return round(score, 3)
+
+
+def near_miss(row):
+    """
+    Apakah penolakan ini masih mungkin membaik dalam beberapa menit?
+
+    Hanya alasan yang bisa berubah sendiri yang dipantau. Mint/freeze aktif
+    atau pool mati tidak akan berubah, jadi langsung dibuang.
+    """
+    reasons = set(row.get("reasons") or [])
+    if not reasons or reasons & {"check_authorities", "pool_dead"}:
+        return False
+
+    if "trades_unavailable" in reasons:
+        return True
+
+    if "top10" in reasons:
+        pct = row.get("top10_pct")
+        if pct is None:
+            return True
+        if config.TOP10_MAX_PCT <= float(pct) <= (
+            config.TOP10_MAX_PCT + config.WATCH_TOP10_MARGIN_PCT
+        ):
+            return True
+
+    if "lp" in reasons:
+        status = row.get("lp_status")
+        pct = row.get("lp_pct")
+        if status == "unknown":
+            return True
+        if status == "unlocked" and pct is not None and float(pct) >= config.WATCH_LP_MIN_PCT:
+            return True
+
+    if "buyers" in reasons:
+        buyers = row.get("buyers2") or 0
+        if buyers >= config.MIN_UNIQUE_BUYERS * config.WATCH_BUYERS_RATIO:
+            return True
+
+    return False
+
+
 def fmt_usd(value):
     try:
         value = float(value)

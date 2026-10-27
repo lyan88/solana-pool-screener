@@ -106,6 +106,23 @@ def fetch_new_pools(pages=None):
     return out, errors
 
 
+def fetch_pool(pool_address):
+    """Ambil data terbaru satu pool (untuk watchlist)."""
+    if not pool_address:
+        return None
+    url = "%s/networks/%s/pools/%s" % (
+        config.GECKO_BASE, config.GECKO_NETWORK, net.quote(pool_address)
+    )
+    data = net.get_json(url, lim=GECKO)
+    item = data.get("data") if isinstance(data, dict) else None
+    if not item:
+        return None
+    pool = _pool_from_gecko(item)
+    if not pool["pool"] or not pool["mint"]:
+        return None
+    return pool
+
+
 def _trade_from_gecko(item):
     attrs = item.get("attributes") or {}
     ts = parse_ts(attrs.get("block_timestamp"))
