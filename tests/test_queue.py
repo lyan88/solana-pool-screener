@@ -76,6 +76,20 @@ class QueueTests(unittest.TestCase):
         self.assertEqual(db.expire_queue(self.conn), 1)
         self.assertEqual(db.watch_stats(self.conn), {})
 
+    def test_expired_item_can_be_queued_again(self):
+        row = _row("Again")
+        db.queue_alert(self.conn, row, 5.0, "first", ttl=60)
+        self.conn.execute(
+            "UPDATE alert_queue SET expires_at=? WHERE mint='Again'",
+            (int(time.time()) - 1,),
+        )
+        self.conn.commit()
+        db.expire_queue(self.conn)
+        self.assertTrue(db.queue_alert(self.conn, row, 8.0, "second"))
+        pending = db.pending_queue(self.conn, limit=5)
+        self.assertEqual([r["mint"] for r in pending], ["Again"])
+        self.assertEqual(pending[0]["message"], "second")
+
     def test_drain_sends_and_records_alert(self):
         row = _row(price=0.0042)
         db.queue_alert(self.conn, row, 7.0, "hello")

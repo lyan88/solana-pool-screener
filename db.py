@@ -209,8 +209,9 @@ def queue_alert(conn, row, score, message, ttl=None):
             mc_usd=excluded.mc_usd, buyers2=excluded.buyers2,
             top10_pct=excluded.top10_pct, lp_status=excluded.lp_status,
             price_usd=excluded.price_usd, message=excluded.message,
-            score=excluded.score, expires_at=excluded.expires_at
-        WHERE alert_queue.status = 'pending'
+            score=excluded.score, expires_at=excluded.expires_at,
+            status='pending', attempts=0, sent_at=NULL, last_error=NULL
+        WHERE alert_queue.status != 'sent'
         """,
         (
             row["mint"], row.get("pool"), row.get("name"), row.get("symbol"),

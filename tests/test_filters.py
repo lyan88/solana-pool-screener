@@ -270,5 +270,18 @@ class FilterTests(unittest.TestCase):
         self.assertEqual(result["details"]["lp_status"], "burned")
 
 
+    def test_launchpad_as_object_is_handled(self):
+        # Rugcheck kadang mengirim launchpad sebagai objek, bukan string.
+        report = make_report(
+            top=[("w%d" % i, 3.0) for i in range(10)],
+            lp_pct=0.0,
+        )
+        report["markets"] = []
+        report["launchpad"] = {"name": "pump.fun", "id": "pumpfun"}
+        result = filters.evaluate_security(make_pool(), report)
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(result["details"]["lp_status"], "burned")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

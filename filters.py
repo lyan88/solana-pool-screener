@@ -189,6 +189,16 @@ def meteora_lock_pct(meteora):
     return min(100.0, locked / tvl * 100.0)
 
 
+def _launchpad_name(report):
+    """Rugcheck bisa mengirim launchpad sebagai string atau objek."""
+    value = (report or {}).get("launchpad")
+    if isinstance(value, dict):
+        value = value.get("name") or value.get("id") or ""
+    if not isinstance(value, str):
+        return ""
+    return value.strip().lower()
+
+
 def lp_state(report, pool_address, dex=None, meteora=None):
     """
     Kembalikan (status, pct, detail).
@@ -210,7 +220,7 @@ def lp_state(report, pool_address, dex=None, meteora=None):
     market = _market_for_pool(report, pool_address)
     if not market:
         # Pool bonding curve tidak punya token LP sama sekali.
-        launchpad = (report.get("launchpad") or "").lower()
+        launchpad = _launchpad_name(report)
         if launchpad.startswith("pump") or dex in BONDING_DEXES:
             return "burned", 100.0, "bonding curve, tanpa token LP"
         return "unknown", None, "pool tidak ada di laporan"
