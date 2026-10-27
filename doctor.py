@@ -45,7 +45,7 @@ def main():
     args = parser.parse_args()
 
     print("=" * 62)
-    print(" DOCTOR — screener2")
+    print(" DOCTOR — Solana Pool Screener")
     print("=" * 62)
     print(" waktu UTC : %s" % time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime()))
     print(" filter    : %s" % config.summary())

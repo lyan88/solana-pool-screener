@@ -133,7 +133,7 @@ def format_alert(pool, sec, buyers, now=None):
 
 def send_test():
     text = (
-        "✅ <b>screener2 siap</b>\n"
+        "✅ <b>Solana Pool Screener siap</b>\n"
         "Filter: mint/freeze revoked · LP burned/locked · top10 &lt; %.0f%% · "
         "MC $%s–$%s · liq ≥ $%s · umur &lt; %dm · ≥ %d buyer unik/%ds."
         % (

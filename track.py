@@ -215,7 +215,7 @@ def show_status():
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Pelacak hasil alert screener2")
+    parser = argparse.ArgumentParser(description="Pelacak hasil alert Solana Pool Screener")
     parser.add_argument("--backfill", action="store_true", help="siapkan outcome untuk alert lama")
     parser.add_argument("--status", action="store_true", help="ringkasan antrean")
     parser.add_argument("--dry-run", action="store_true", help="jangan tulis ke database")

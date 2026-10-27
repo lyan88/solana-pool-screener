@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Konfigurasi screener2. Semua ambang batas bisa diubah lewat .env.
+Konfigurasi Solana Pool Screener. Semua ambang batas bisa diubah lewat .env.
 
 Filosofi: tolak cepat dengan data murah (umur, likuiditas, MC, buyers m5),
 baru panggil API mahal (Rugcheck, trades) untuk kandidat yang tersisa.
@@ -101,7 +101,7 @@ GECKO_MIN_INTERVAL = _f("GECKO_MIN_INTERVAL", 6.0)
 RUGCHECK_MIN_INTERVAL = _f("RUGCHECK_MIN_INTERVAL", 2.0)
 HTTP_TIMEOUT = _f("HTTP_TIMEOUT", 25.0)
 HTTP_RETRIES = _i("HTTP_RETRIES", 3)
-USER_AGENT = _s("USER_AGENT", "screener2/1.0 (+solana-new-pool-filter)")
+USER_AGENT = _s("USER_AGENT", "solana-pool-screener/1.0 (+https://github.com/lyan88/solana-pool-screener)")
 
 # Keamanan cache: top holder & LP bisa berubah, tapi tidak perlu tiap detik.
 SECURITY_CACHE_SEC = _i("SECURITY_CACHE_SEC", 120)

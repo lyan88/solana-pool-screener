@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Laporan harian screener2 ke Telegram.
+Laporan harian Solana Pool Screener ke Telegram.
 
 Isinya: aktivitas scan, jumlah alert, dan performa tiap horizon
 (win rate, median MFE/MAE, alert terbaik/terburuk).
@@ -126,7 +126,7 @@ def build(hours=None):
     end = datetime.fromtimestamp(now, timezone.utc)
     start = datetime.fromtimestamp(since, timezone.utc)
     lines = [
-        "📊 <b>Laporan screener2</b>",
+        "📊 <b>Laporan Solana Pool Screener</b>",
         "%s–%s UTC" % (start.strftime("%d %b %H:%M"), end.strftime("%d %b %H:%M")),
         "",
         "<b>Scan</b>",
@@ -197,7 +197,7 @@ def build(hours=None):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Laporan harian screener2")
+    parser = argparse.ArgumentParser(description="Laporan harian Solana Pool Screener")
     parser.add_argument("--telegram", action="store_true", help="kirim ke Telegram")
     parser.add_argument("--dry-run", action="store_true", help="cetak saja")
     parser.add_argument("--hours", type=int, default=None, help="periode laporan")

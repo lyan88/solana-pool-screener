@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pasang screener2 di /opt/screener2 dan aktifkan cron
+# Pasang Solana Pool Screener di /opt/screener2 dan aktifkan cron
 # (scan tiap 2 menit, tracker tiap 5 menit, laporan 07:00 UTC).
 # Jalankan sebagai root dari folder proyek:
 #
