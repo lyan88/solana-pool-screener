@@ -2,138 +2,144 @@
 
 [![CI](https://github.com/lyan88/solana-pool-screener/actions/workflows/ci.yml/badge.svg)](https://github.com/lyan88/solana-pool-screener/actions/workflows/ci.yml)
 
-Screener pool baru Solana. Tugasnya satu: menemukan token yang
-lolos filter, lalu mengirim satu alert ke Telegram. **Tidak memegang private
-key dan tidak melakukan swap.**
+**English** | [Bahasa Indonesia](README.id.md)
 
-## Filter
+A new-pool screener for Solana. It has one job: find tokens that pass strict
+filters and send a single Telegram alert. **It never holds a private key and
+never swaps.**
 
-| Filter | Nilai default | Sumber |
+## Filters
+
+| Filter | Default | Source |
 |---|---|---|
-| Mint authority revoked | wajib | Rugcheck |
-| Freeze authority revoked | wajib | Rugcheck |
-| LP burned / locked | ≥ 99% (burned diprioritaskan) | Rugcheck per pool |
-| Top 10 holder | < 35% (di luar vault pool & burn, minimal 10 holder dan 5% supply) | Rugcheck |
-| Market cap / FDV | $8.000 – $100.000 | GeckoTerminal |
-| Likuiditas | ≥ $5.000 | GeckoTerminal |
-| Umur pool | < 10 menit | GeckoTerminal |
-| Unique buyer | ≥ 15 dalam 2 menit | GeckoTerminal trades |
+| Mint authority revoked | required | Rugcheck |
+| Freeze authority revoked | required | Rugcheck |
+| LP burned / locked | ≥ 99% (burned preferred) | Rugcheck per pool |
+| Top 10 holders | < 35% (excluding pool vaults & burn, min 10 holders and 5% supply) | Rugcheck |
+| Market cap / FDV | $8,000 – $100,000 | GeckoTerminal |
+| Liquidity | ≥ $5,000 | GeckoTerminal |
+| Pool age | < 10 minutes | GeckoTerminal |
+| Unique buyers | ≥ 15 in 2 minutes | GeckoTerminal trades |
 
-Semua angka bisa diubah di `.env` (lihat `.env.example`).
+Every threshold can be changed in `.env` (see `.env.example`).
 
-## Cara kerja satu putaran
+## One scan round
 
-1. Ambil 2 halaman `new_pools` GeckoTerminal (±40 pool).
-2. Saring murah: umur, likuiditas, MC, dan `buyers` m5 sebagai prefilter.
-3. Untuk pool Meteora DAMM v2, cek API resmi Meteora. Pool yang diblacklist
-   atau TVL-nya nyaris nol langsung ditolak (`pool_dead`) tanpa memanggil
-   Rugcheck — reserve GeckoTerminal untuk pool seperti ini sering menyesatkan.
-4. Untuk kandidat yang tersisa, ambil laporan Rugcheck:
-   mint/freeze, top holder, dan status LP pool yang cocok. Kalau API Meteora
-   melaporkan lock permanen ≥ 99%, angka itu dipakai lebih dulu.
-5. Hanya kalau lolos semua, ambil daftar trade pool dan hitung **unique
-   wallet** yang membeli dalam 120 detik terakhir. Harga alert diambil dari
-   trade terakhir yang wajar (bukan snapshot `new_pools` yang bisa tertinggal).
-6. Kalau lolos, alert masuk **antrean berprioritas** lalu dikirim sesuai
-   kuota Telegram. Kandidat yang hampir lolos masuk **watchlist** dan
-   dievaluasi ulang tiap 2 menit sampai umurnya 10 menit.
+1. Fetch 2 pages of GeckoTerminal `new_pools` (±40 pools).
+2. Cheap prefilter: age, liquidity, MC, and m5 `buyers`.
+3. For Meteora DAMM v2 pools, check the official Meteora API. Blacklisted
+   pools or pools with near-zero TVL are rejected immediately (`pool_dead`)
+   without calling Rugcheck — GeckoTerminal reserves are often misleading for
+   these pools.
+4. For remaining candidates, fetch the Rugcheck report: mint/freeze
+   authorities, top holders, and LP status for the matching pool. If the
+   Meteora API reports a permanent lock ≥ 99%, that number wins.
+5. Only after everything passes, fetch the pool's trades and count **unique
+   wallets** buying in the last 120 seconds. The alert price comes from the
+   latest sane trade, not the `new_pools` snapshot which can be stale.
+6. Passing tokens enter a **priority alert queue** and are sent within the
+   Telegram quota. Near-misses enter a **watchlist** and are re-evaluated
+   every 2 minutes until they are 10 minutes old.
 
-Deteksi berjalan tiap 2 menit lewat cron, jadi satu token bisa dievaluasi
-beberapa kali ketika holder makin tersebar.
+Detection runs every 2 minutes via cron, so a token can be evaluated several
+times while its holders become more distributed.
 
-### Isi alert
+### What the alert shows
 
-- **Harga** memakai trade terakhir yang tidak ditandai `is_anomalous`; kalau
-  tidak ada trade segar (≤ 180 detik), snapshot GeckoTerminal dipakai sebagai
-  fallback. Formatnya desimal biasa, bukan notasi ilmiah.
-- **Mint auth / Freeze auth** dirender dari laporan Rugcheck apa adanya:
-  `revoked ✅`, `AKTIF ⚠️`, atau `tidak diketahui ❔`. Tidak pernah
-  diasumsikan revoked tanpa data.
-- **LP** diberi label `burned` kalau `lpMint` adalah alamat burn pada DEX
-  yang memakai token LP fungible (pump.fun/pumpswap/raydium/Meteora Dynamic).
-  DEX berbasis position NFT seperti Meteora DAMM v2 tidak dianggap burned
-  hanya karena `lpMint` kosong; statusnya mengikuti lock permanen Meteora
-  atau `lpLockedPct` Rugcheck. `locked` hanya dipakai kalau ada bukti lock
-  ≥ 99%.
+- **Price** uses the latest trade that is not flagged `is_anomalous`. If there
+  is no fresh trade (≤ 180 seconds), the GeckoTerminal snapshot is used as a
+  fallback. Prices are plain decimals, never scientific notation.
+- **Mint auth / Freeze auth** are rendered from the Rugcheck report as-is:
+  `revoked ✅`, `ACTIVE ⚠️`, or `unknown ❔`. The screener never assumes
+  revoked without data.
+- **LP** is labelled `burned` when `lpMint` is a burn address on a DEX that
+  uses fungible LP tokens (pump.fun/pumpswap/raydium/Meteora Dynamic).
+  Position-NFT DEXes such as Meteora DAMM v2 are not treated as burned just
+  because `lpMint` is empty; their status follows Meteora's permanent lock or
+  Rugcheck's `lpLockedPct`. `locked` is only used when there is evidence of a
+  lock ≥ 99%.
+- Alerts are **English by default**. Set `ALERT_LANG=id` in `.env` for
+  Indonesian.
 
-### Antrean alert
+### Alert queue
 
-Alert tidak langsung dibuang kalau kuota Telegram penuh:
+Alerts are not dropped when the Telegram quota is full:
 
-- disimpan di tabel `alert_queue` dengan skor prioritas
-- dikirim segera setelah lolos; antrean hanya menampung saat kuota/jeda
-  menghalangi, dan selalu dikirim skor tertinggi lebih dulu
-- kedaluwarsa setelah 15 menit supaya tidak mengirim sinyal basi
-- kalau tertunda lebih dari 30 detik, alert diberi banner bahwa umur & harga
-  adalah kondisi saat deteksi
-- kalau tertunda lebih dari 90 detik, harga entry tidak dipakai lagi;
-  tracker memakai harga lilin saat alert benar-benar terkirim
+- stored in the `alert_queue` table with a priority score
+- sent immediately when they pass; the queue only holds alerts blocked by
+  quota/rate limits, always sending the highest score first
+- expire after 15 minutes so stale signals are not delivered
+- delayed more than 30 seconds: the alert gets a banner saying age & price are
+  as of detection
+- delayed more than 90 seconds: the stored entry price is no longer used; the
+  tracker falls back to the candle price when the alert was actually sent
 
 ### Watchlist
 
-Kandidat yang ditolak karena alasan yang masih bisa membaik (top10 dekat
-ambang, LP hampir terkunci, LP belum terbaca, buyer kurang sedikit, trades
-gagal) dipantau ulang tanpa harus muncul lagi di `new_pools`. Batasnya
-`WATCH_TTL_SEC` (10 menit) dan `WATCH_MAX_CHECKS` (5 kali).
+Candidates rejected for reasons that can still improve (top10 close to the
+threshold, LP almost locked, LP not readable yet, slightly too few buyers,
+failed trades) are re-checked without having to reappear in `new_pools`.
+Limits are `WATCH_TTL_SEC` (10 minutes) and `WATCH_MAX_CHECKS` (5 checks).
 
-## Pengukuran hasil
+## Outcome tracking
 
-Setiap alert diukur otomatis pada +5 menit, +30 menit, +1 jam, dan +6 jam:
+Every alert is measured automatically at +5 minutes, +30 minutes, +1 hour,
+and +6 hours:
 
-- **MFE** — kenaikan maksimum dari harga alert (high lilin)
-- **MAE** — penurunan maksimum dari harga alert (low lilin)
+- **MFE** — maximum upside from the alert price (candle high)
+- **MAE** — maximum drawdown from the alert price (candle low)
 - **win** — MFE ≥ +50% (`WIN_MFE_MIN=1.5`)
 
 ```bash
-python3 track.py --backfill   # siapkan antrean untuk alert lama
-python3 track.py --status     # lihat antrean
-python3 track.py             # ukur yang sudah jatuh tempo
-python3 track.py --dry-run   # ukur tanpa menulis DB
-python3 report.py --dry-run  # laporan 24 jam
-python3 report.py --telegram # kirim laporan
+python3 track.py --backfill   # prepare rows for old alerts
+python3 track.py --status     # inspect the queue
+python3 track.py              # measure alerts that are due
+python3 track.py --dry-run    # measure without writing to the DB
+python3 report.py --dry-run   # 24-hour report
+python3 report.py --telegram  # send the report
 ```
 
-Cron menjalankan tracker tiap 5 menit dan laporan tiap 07:00 UTC.
+Cron runs the tracker every 5 minutes and the report at 07:00 UTC.
 
-> MAE dihitung dari **low lilin 1 menit**, jadi bisa lebih ekstrem daripada
-> harga penutupan. Untuk token baru, wick -30% sampai -60% dalam 5 menit
-> memang sering terjadi. Anggap ini ukuran risiko, bukan harga jual realistis.
+> MAE is calculated from the **1-minute candle low**, so it can look more
+> extreme than the closing price. For new tokens, -30% to -60% wicks within
+> 5 minutes are common. Treat it as a risk measure, not a realistic exit.
 
-## Menjalankan
+## Running
 
 ```bash
 git clone https://github.com/lyan88/solana-pool-screener.git
 cd solana-pool-screener
-cp .env.example .env      # isi token & chat id Telegram
+cp .env.example .env      # fill in the Telegram token & chat id
 python3 scanner.py --once --dry-run --verbose
 python3 scanner.py --test-telegram
 python3 scanner.py --once
 ```
 
-Loop lokal:
+Local loop:
 
 ```bash
 python3 scanner.py --loop 120 --verbose
 ```
 
-Uji filter tanpa jaringan:
+Run the tests without network access:
 
 ```bash
 python3 -m unittest discover -s tests -v
 ```
 
-## Pasang di VPS
+## Deploy on a VPS
 
 ```bash
 sudo ./deploy/install.sh
 ```
 
-Skrip menyalin ke `/opt/screener2`, menjalankan tes + `doctor.py`, lalu
-memasang `/etc/cron.d/screener2` (scan 2 menit, tracker 5 menit, laporan
-07:00 UTC; user `screener`, `flock`).
-Kalau `doctor.py` gagal, cron tidak diaktifkan.
+The script copies the app to `/opt/screener2`, runs the tests + `doctor.py`,
+then installs `/etc/cron.d/screener2` (scan every 2 minutes, tracker every
+5 minutes, report at 07:00 UTC; user `screener`, `flock`).
+If `doctor.py` fails, cron is not enabled.
 
-Pemeriksaan manual:
+Manual checks:
 
 ```bash
 sudo -u screener python3 /opt/screener2/doctor.py
@@ -141,89 +147,90 @@ sudo -u screener python3 /opt/screener2/scanner.py --once --dry-run --verbose
 tail -f /opt/screener2/logs/scan.log
 ```
 
-## Sinkronisasi GitHub
+## GitHub sync
 
 Repo: https://github.com/lyan88/solana-pool-screener
 
-Di VPS pengembangan, `deploy/git-sync.sh` dijalankan cron tiap 15 menit:
+On the development VPS, `deploy/git-sync.sh` runs every 15 minutes via cron:
 
-- commit & push hanya kalau ada perubahan
-- unit test wajib lolos sebelum push
-- `.env`, `data/`, dan `logs/` tidak pernah ikut
+- commits & pushes only when something changed
+- unit tests must pass before pushing
+- `.env`, `data/`, and `logs/` are never included
 
-Menarik update dari GitHub ke produksi (manual, setelah CI hijau):
+Pull updates from GitHub into production manually, after CI is green:
 
 ```bash
 sudo ./deploy/update.sh
 ```
 
-Skrip itu melakukan `git pull --ff-only` sebagai pemilik repo, lalu
-menjalankan `deploy/install.sh --force`.
+It runs `git pull --ff-only` as the repo owner, then
+`deploy/install.sh --force`.
 
-## Batasan yang perlu diketahui
+## Known limitations
 
-- **Bukan real-time.** GeckoTerminal adalah API publik, bukan stream RPC.
-  Pool terbaru bisa terlambat 1–2 menit. Untuk sniper sub-detik, sumbernya
-  harus RPC/WebSocket, bukan screener ini.
-- **Top holder dari Rugcheck** adalah snapshot. Bisa berubah beberapa detik
-  kemudian; ini filter risiko, bukan jaminan.
-- **LP "locked" ≠ "burned".** Default menerima keduanya karena banyak pool
-  memakai locker. Set `LP_ACCEPT_LOCKED=false` kalau hanya mau LP yang benar-
-  benar dikirim ke incinerator.
-- **Filter ketat = alert jarang.** Di menit ke-2, top 10 sering masih 50–90%.
-  Token baru biasanya lolos setelah beberapa menit, kalau memang terdistribusi.
-- **Rugcheck belum tentu mengindeks token berumur beberapa detik.** Kandidat
-  seperti itu ditolak dengan alasan `data keamanan tidak tersedia` dan dicoba
-  lagi pada putaran berikutnya.
-- **Tidak ada jaminan profit.** Screener hanya menyaring; keputusan beli dan
-  manajemen risiko tetap di tangan kamu.
-- **Batas alert** default 40 pesan/jam dan 400/hari. Alert yang tidak bisa
-  dikirim masuk antrean, bukan dibuang. Ubah `TELEGRAM_MAX_PER_HOUR` /
-  `TELEGRAM_MAX_PER_DAY` kalau perlu.
+- **Not real-time.** GeckoTerminal is a public API, not an RPC stream. The
+  newest pools can be 1–2 minutes late. Sub-second sniping needs
+  RPC/WebSocket, not this screener.
+- **Top holders from Rugcheck are a snapshot.** They can change seconds later;
+  this is a risk filter, not a guarantee.
+- **LP "locked" ≠ "burned".** By default both are accepted because many pools
+  use a locker. Set `LP_ACCEPT_LOCKED=false` if you only want LP actually sent
+  to the incinerator.
+- **Strict filters mean few alerts.** At minute 2, top 10 often still holds
+  50–90%. New tokens usually pass after a few minutes, if they distribute.
+- **Rugcheck may not index a token that is only seconds old.** Such
+  candidates are rejected with `security data unavailable` and retried on the
+  next round.
+- **No profit guarantee.** The screener only filters; buying decisions and
+  risk management remain yours.
+- **Alert limits** default to 40 messages/hour and 400/day. Alerts that cannot
+  be sent are queued, not dropped. Change `TELEGRAM_MAX_PER_HOUR` /
+  `TELEGRAM_MAX_PER_DAY` if needed.
 
-## Struktur
+## Layout
 
 ```
-scanner.py     orkestrasi satu putaran
-sources.py     GeckoTerminal + Rugcheck + Meteora, normalisasi data
-filters.py     semua aturan filter (murni, bisa diuji)
-net.py         HTTP + rate limit adaptif + retry 429 (kunci antar-proses)
-track.py       pelacak outcome +5m/+30m/+1j/+6j
-report.py      laporan harian ke Telegram
-telegram.py    format & kirim alert, batas laju
-db.py          SQLite: evaluasi, alert, scan, outcome, cache
-doctor.py      cek lingkungan sebelum cron
-tests/         unit test filter, outcome, dan format alert
-deploy/        cron + install script
+scanner.py     one scan round orchestration
+sources.py     GeckoTerminal + Rugcheck + Meteora normalization
+filters.py     all filter rules (pure, easy to test)
+net.py         HTTP + adaptive rate limit + 429 retry (cross-process lock)
+track.py       outcome tracker +5m/+30m/+1h/+6h
+report.py      daily report to Telegram
+telegram.py    alert formatting & sending, rate limits
+i18n.py        English/Indonesian alert strings
+db.py          SQLite: evaluations, alerts, scans, outcomes, cache
+doctor.py      environment check before enabling cron
+tests/         unit tests for filters, outcomes, and alert formatting
+deploy/        cron + install scripts
 ```
 
-Data disimpan di `data/screener2.db`:
+Data lives in `data/screener2.db`:
 
-- `evaluations` — kandidat yang pernah dievaluasi, alasan lolos/tolak
-- `alerts` — satu baris per mint yang sudah dikirim
-- `alert_queue` — antrean alert berprioritas yang belum terkirim
-- `watchlist` — kandidat near-miss yang dipantau ulang
-- `scans` — ringkasan tiap putaran (pool, kandidat, alert, error)
-- `outcomes` — hasil per alert per horizon (MFE/MAE)
-- `security_cache` — laporan Rugcheck, TTL 120 detik
+- `evaluations` — every candidate evaluated, with pass/reject reasons
+- `alerts` — one row per mint that was actually sent
+- `alert_queue` — prioritized alerts not sent yet
+- `watchlist` — near-miss candidates being re-checked
+- `scans` — per-round summary (pools, candidates, alerts, errors)
+- `outcomes` — result per alert per horizon (MFE/MAE)
+- `security_cache` — Rugcheck reports, 120-second TTL
 
-## Tuning cepat
+## Quick tuning
 
-| Gejala | Ubah |
+| Symptom | Change |
 |---|---|
-| Terlalu banyak alert | turunkan `TOP10_MAX_PCT`, naikkan `MIN_UNIQUE_BUYERS` |
-| Tidak ada alert sama sekali | naikkan `TOP10_MAX_PCT` ke 50, atau `LP_ACCEPT_LOCKED=true` |
-| Ketinggalan pool | naikkan `SCAN_PAGES`, turunkan jeda cron (risiko 429) |
-| Kena 429 | naikkan `GECKO_MIN_INTERVAL` (6 → 10 detik) |
-| Ingin liq lebih aman | naikkan `MIN_LIQ_USD` |
+| Too many alerts | lower `TOP10_MAX_PCT`, raise `MIN_UNIQUE_BUYERS` |
+| No alerts at all | raise `TOP10_MAX_PCT` to 50, or set `LP_ACCEPT_LOCKED=true` |
+| Missing pools | raise `SCAN_PAGES`, lower the cron interval (429 risk) |
+| Hitting 429 | raise `GECKO_MIN_INTERVAL` (6 → 10 seconds) |
+| Want safer liquidity | raise `MIN_LIQ_USD` |
 
-## Lisensi & disclaimer
+## License & disclaimer
 
-MIT — lihat [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE).
 
-Proyek ini hanya alat bantu screening dan **bukan nasihat keuangan**. Tidak
-ada jaminan profit, dan tidak ada jaminan token yang lolos filter bebas dari
-rug. Selalu verifikasi sendiri sebelum membeli.
+This project is a screening tool only and **not financial advice**. There is
+no profit guarantee, and no guarantee that a token passing the filters is free
+from a rug. Always verify yourself before buying.
 
-Setiap push/PR menjalankan unit test lewat GitHub Actions
+Every push/PR runs the unit tests through GitHub Actions
 (`.github/workflows/ci.yml`).

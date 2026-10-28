@@ -125,6 +125,10 @@ REPORT_HOURS = _i("REPORT_HOURS", 24)
 TELEGRAM_BOT_TOKEN = _s("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = _s("TELEGRAM_CHAT_ID")
 TELEGRAM_ENABLED = _b("TELEGRAM_ENABLED", True)
+# Bahasa pesan yang dilihat pengguna: "en" atau "id".
+ALERT_LANG = _s("ALERT_LANG", "en").strip().lower()
+if ALERT_LANG not in ("en", "id"):
+    ALERT_LANG = "en"
 TELEGRAM_MIN_INTERVAL_SEC = _f("TELEGRAM_MIN_INTERVAL_SEC", 3.0)
 # Batas lama (20/jam, 100/hari) membuat alert hilang saat jam sibuk.
 # Antrean di bawah tetap mencegah spam, jadi batas bisa lebih longgar.

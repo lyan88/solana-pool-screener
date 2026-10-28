@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import config
 import db
 import filters
+import i18n
 
 STATE_PATH = config.DATA_DIR / "telegram_state.json"
 
@@ -81,17 +82,14 @@ def send(text, dry_run=None, disable_preview=True, bypass_limits=False):
     return True, "terkirim"
 
 
-def _delayed_message(message, delay_sec):
+def _delayed_message(message, delay_sec, lang=None):
     if delay_sec < 30:
         return message
     if delay_sec < 60:
         delay_text = "%ds" % int(delay_sec)
     else:
         delay_text = "%dm" % max(1, int(delay_sec // 60))
-    return (
-        "⏳ <i>Tertunda %s dari deteksi — umur & harga di bawah adalah saat deteksi.</i>\n"
-        % delay_text
-    ) + message
+    return (i18n.text(lang, "delay_banner") % delay_text) + "\n" + message
 
 
 def drain_queue(conn, dry_run=None, max_send=None):
@@ -112,7 +110,7 @@ def drain_queue(conn, dry_run=None, max_send=None):
         if sent >= max_send:
             break
         delay = max(0, int(time.time()) - int(row["created_at"]))
-        text = _delayed_message(row["message"], delay)
+        text = _delayed_message(row["message"], delay, lang=config.ALERT_LANG)
         if dry_run:
             print(text)
             print()
@@ -161,13 +159,15 @@ def _e(value):
     return html.escape("" if value is None else str(value), quote=True)
 
 
-def format_alert(pool, sec, buyers, now=None):
+def format_alert(pool, sec, buyers, now=None, lang=None):
+    lang = i18n.normalize(lang or config.ALERT_LANG)
     now = now or datetime.now(timezone.utc)
     age = pool.get("age_sec") or 0
     age_text = "%dm%02ds" % (age // 60, age % 60)
-    lp_status = (sec.get("details") or {}).get("lp_status") or "unknown"
-    lp_pct = (sec.get("details") or {}).get("lp_pct")
-    lp_label = {"burned": "burned", "locked": "locked", "unlocked": "terbuka", "unknown": "tidak diketahui"}.get(lp_status, lp_status)
+    details = sec.get("details") or {}
+    lp_status = details.get("lp_status") or "unknown"
+    lp_pct = details.get("lp_pct")
+    lp_label = i18n.status_label(lang, lp_status)
     if lp_pct is not None:
         lp_text = "%s %.1f%%" % (lp_label, float(lp_pct))
     else:
@@ -177,34 +177,41 @@ def format_alert(pool, sec, buyers, now=None):
     liq = pool.get("liq_usd")
     buyers2 = buyers or {}
     top10 = sec.get("top10_pct")
-    details = sec.get("details") or {}
 
     def _authority(revoked):
         if revoked is True:
-            return "revoked ✅"
+            return i18n.text(lang, "revoked")
         if revoked is False:
-            return "AKTIF ⚠️"
-        return "tidak diketahui ❔"
+            return i18n.text(lang, "active")
+        return i18n.text(lang, "unknown")
+
+    buyers_line = i18n.text(lang, "buyers") % {
+        "window": buyers2.get("window_sec", config.BUYER_WINDOW_SEC),
+        "buyers": buyers2.get("buyers", 0),
+        "buys": buyers2.get("buys", 0),
+        "sells": buyers2.get("sells", 0),
+    }
 
     lines = [
         "<b>$%s</b>" % _e(pool.get("symbol") or "?"),
-        "%s · %s · umur %s" % (_e(pool.get("name") or "?"), _e(pool.get("dex") or "?"), age_text),
+        i18n.text(lang, "line_meta") % (
+            _e(pool.get("name") or "?"),
+            _e(pool.get("dex") or "?"),
+            age_text,
+        ),
         "",
         "MC <b>$%s</b> · Liq <b>$%s</b>" % (filters.fmt_usd(mc), filters.fmt_usd(liq)),
-        "Buyer unik %ds: <b>%d</b> (%d beli / %d jual)" % (
-            buyers2.get("window_sec", config.BUYER_WINDOW_SEC),
-            buyers2.get("buyers", 0), buyers2.get("buys", 0), buyers2.get("sells", 0),
-        ),
-        "Top 10: <b>%s</b> (di luar pool/burn)" % (
+        buyers_line,
+        i18n.text(lang, "top10") % (
             "%.1f%%" % top10 if top10 is not None else "?"
         ),
-        "Mint auth: %s · Freeze auth: %s" % (
+        i18n.text(lang, "auth") % (
             _authority(details.get("mint_revoked")),
             _authority(details.get("freeze_revoked")),
         ),
-        "LP: <b>%s</b>" % _e(lp_text),
+        i18n.text(lang, "lp") % _e(lp_text),
         "",
-        "Harga: $%s" % _e(filters.fmt_price(pool.get("price_usd"))),
+        i18n.text(lang, "price") % _e(filters.fmt_price(pool.get("price_usd"))),
         "Mint: <code>%s</code>" % _e(pool.get("mint")),
         "Pool: <code>%s</code>" % _e(pool.get("pool")),
         "",
@@ -219,17 +226,13 @@ def format_alert(pool, sec, buyers, now=None):
     return "\n".join(lines)
 
 
-def send_test():
-    text = (
-        "✅ <b>Solana Pool Screener siap</b>\n"
-        "Filter: mint/freeze revoked · LP burned/locked · top10 &lt; %.0f%% · "
-        "MC $%s–$%s · liq ≥ $%s · umur &lt; %dm · ≥ %d buyer unik/%ds."
-        % (
-            config.TOP10_MAX_PCT,
-            filters.fmt_usd(config.MIN_MC_USD), filters.fmt_usd(config.MAX_MC_USD),
-            filters.fmt_usd(config.MIN_LIQ_USD),
-            config.MAX_AGE_SEC // 60, config.MIN_UNIQUE_BUYERS,
-            config.BUYER_WINDOW_SEC,
-        )
+def send_test(lang=None):
+    lang = i18n.normalize(lang or config.ALERT_LANG)
+    text = i18n.text(lang, "test_ready") + "\n" + i18n.text(lang, "test_filter") % (
+        config.TOP10_MAX_PCT,
+        filters.fmt_usd(config.MIN_MC_USD), filters.fmt_usd(config.MAX_MC_USD),
+        filters.fmt_usd(config.MIN_LIQ_USD),
+        config.MAX_AGE_SEC // 60, config.MIN_UNIQUE_BUYERS,
+        config.BUYER_WINDOW_SEC,
     )
     return send(text)

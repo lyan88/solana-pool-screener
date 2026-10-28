@@ -46,7 +46,7 @@ fi
 
 echo "==> menyalin berkas ke $DST"
 mkdir -p "$DST"
-for f in config.py net.py sources.py filters.py db.py telegram.py scanner.py track.py report.py doctor.py README.md .env.example; do
+for f in config.py net.py sources.py filters.py db.py telegram.py i18n.py scanner.py track.py report.py doctor.py README.md README.id.md .env.example; do
   install -m 0644 -o "$RUN_USER" -g "$RUN_USER" "$SRC/$f" "$DST/$f"
 done
 mkdir -p "$DST/tests" "$DST/deploy" "$DST/data" "$DST/logs" "$DST/locks"
