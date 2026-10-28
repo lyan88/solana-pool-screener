@@ -32,7 +32,8 @@ Semua angka bisa diubah di `.env` (lihat `.env.example`).
    mint/freeze, top holder, dan status LP pool yang cocok. Kalau API Meteora
    melaporkan lock permanen ≥ 99%, angka itu dipakai lebih dulu.
 5. Hanya kalau lolos semua, ambil daftar trade pool dan hitung **unique
-   wallet** yang membeli dalam 120 detik terakhir.
+   wallet** yang membeli dalam 120 detik terakhir. Harga alert diambil dari
+   trade terakhir yang wajar (bukan snapshot `new_pools` yang bisa tertinggal).
 6. Kalau lolos, alert masuk **antrean berprioritas** lalu dikirim sesuai
    kuota Telegram. Kandidat yang hampir lolos masuk **watchlist** dan
    dievaluasi ulang tiap 2 menit sampai umurnya 10 menit.
@@ -40,13 +41,27 @@ Semua angka bisa diubah di `.env` (lihat `.env.example`).
 Deteksi berjalan tiap 2 menit lewat cron, jadi satu token bisa dievaluasi
 beberapa kali ketika holder makin tersebar.
 
+### Isi alert
+
+- **Harga** memakai trade terakhir yang tidak ditandai `is_anomalous`; kalau
+  tidak ada trade segar (≤ 180 detik), snapshot GeckoTerminal dipakai sebagai
+  fallback. Formatnya desimal biasa, bukan notasi ilmiah.
+- **Mint auth / Freeze auth** dirender dari laporan Rugcheck apa adanya:
+  `revoked ✅`, `AKTIF ⚠️`, atau `tidak diketahui ❔`. Tidak pernah
+  diasumsikan revoked tanpa data.
+- **LP** diberi label `burned` kalau `lpMint` adalah alamat burn (mis.
+  pump.fun), `locked` hanya kalau ada bukti lock ≥ 99%.
+
 ### Antrean alert
 
 Alert tidak langsung dibuang kalau kuota Telegram penuh:
 
 - disimpan di tabel `alert_queue` dengan skor prioritas
-- dikirim saat kuota tersedia, skor tertinggi lebih dulu
+- dikirim segera setelah lolos; antrean hanya menampung saat kuota/jeda
+  menghalangi, dan selalu dikirim skor tertinggi lebih dulu
 - kedaluwarsa setelah 15 menit supaya tidak mengirim sinyal basi
+- kalau tertunda lebih dari 30 detik, alert diberi banner bahwa umur & harga
+  adalah kondisi saat deteksi
 - kalau tertunda lebih dari 90 detik, harga entry tidak dipakai lagi;
   tracker memakai harga lilin saat alert benar-benar terkirim
 

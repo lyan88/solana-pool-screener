@@ -87,6 +87,7 @@ def _evaluate_pool(conn, pool, now, verbose=False):
     reasons = list(sec["reasons"])
     buyer_stats = None
     is_pass = bool(sec["passed"])
+    trades = None
 
     if is_pass:
         try:
@@ -106,6 +107,24 @@ def _evaluate_pool(conn, pool, now, verbose=False):
                 if verbose:
                     log("  %-18s %s" % ((pool.get("symbol") or "?")[:18], detail))
 
+    # Harga snapshot new_pools bisa tertinggal. Pakai trade terakhir yang
+    # wajar; snapshot hanya fallback kalau tidak ada trade segar.
+    price = pool.get("price_usd")
+    trade_price = sources.latest_trade_price(trades, mint, now=now)
+    if trade_price is not None:
+        if verbose and price and abs(trade_price - float(price)) / float(price) > 0.02:
+            log("  harga trade %.10g (snapshot %.10g)" % (trade_price, float(price)))
+        # MC/FDV snapshot dihitung dari harga snapshot. Sesuaikan dengan
+        # harga trade supaya angka MC di alert tidak bertentangan dengan harga.
+        try:
+            snapshot_price = float(price)
+        except (TypeError, ValueError):
+            snapshot_price = 0.0
+        if snapshot_price > 0 and pool.get("mc_usd"):
+            pool["mc_usd"] = float(pool["mc_usd"]) * trade_price / snapshot_price
+        price = trade_price
+    pool["price_usd"] = price
+
     row = {
         "mint": mint,
         "pool": pool.get("pool"),
@@ -119,7 +138,7 @@ def _evaluate_pool(conn, pool, now, verbose=False):
         "top10_pct": sec.get("top10_pct"),
         "lp_status": sec["details"].get("lp_status"),
         "lp_pct": sec["details"].get("lp_pct"),
-        "price_usd": pool.get("price_usd"),
+        "price_usd": price,
         "buyers2": (buyer_stats or {}).get("buyers"),
         "buys2": (buyer_stats or {}).get("buys"),
         "sells2": (buyer_stats or {}).get("sells"),
@@ -143,6 +162,17 @@ def _queue_or_print(conn, pool, row, sec, buyer_stats, dry_run, stats):
         stats["queued"] += 1
         db.watch_finish(conn, row["mint"], "queued")
         log("  antre %s (skor %.1f)" % ((pool.get("symbol") or "?")[:18], score))
+        if not dry_run:
+            # Kirim segera setelah masuk antrean supaya harga tidak basi.
+            # Kalau kuota/jeda menghalangi, sisa antrean diurus di akhir putaran.
+            result = telegram.drain_queue(conn, max_send=1)
+            stats["alerted"] += result["sent"]
+            stats["failed"] += result["failed"]
+            if result["sent"] or result["failed"]:
+                log(
+                    "  kirim: %d terkirim, %d gagal"
+                    % (result["sent"], result["failed"])
+                )
 
 
 def _maybe_watch(conn, pool, row, sec, stats):
@@ -324,11 +354,11 @@ def scan_once(pages=None, dry_run=False, mint_only=None, verbose=False):
         log("  ERROR watchlist: %s" % exc)
         traceback.print_exc()
 
-    # 3) Kirim antrean (prioritas skor tertinggi).
+    # 3) Kirim sisa antrean (prioritas skor tertinggi).
     if not dry_run:
         result = telegram.drain_queue(conn)
-        stats["alerted"] = result["sent"]
-        stats["failed"] = result["failed"]
+        stats["alerted"] += result["sent"]
+        stats["failed"] += result["failed"]
         if result["sent"] or result["failed"]:
             log(
                 "antrean: %d terkirim, %d gagal"

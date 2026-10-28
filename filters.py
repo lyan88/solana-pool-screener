@@ -7,6 +7,7 @@ Urutan evaluasi sengaja dari yang paling murah:
   -> mint/freeze -> top holder -> LP -> unique buyer 2 menit (butuh trades)
 """
 
+import math
 from datetime import datetime
 
 import config
@@ -16,9 +17,18 @@ BURN_ADDRESSES = {
     "11111111111111111111111111111111",
     "So11111111111111111111111111111111111111112",
 }
+# Alamat yang benar-benar berarti token LP dimusnahkan. Wrapped SOL tidak
+# termasuk: kalau muncul sebagai lpMint, itu anomali, bukan bukti burn.
+LP_BURN_ADDRESSES = {
+    "1nc1nerator11111111111111111111111111111111",
+    "11111111111111111111111111111111",
+}
 AMM_TYPES = {"AMM", "POOL", "MARKET"}
 # DEX yang memakai bonding curve: tidak ada token LP yang bisa ditarik dev.
 BONDING_DEXES = {"pump-fun", "pumpfun", "meteora-dbc"}
+# DAMM v2 memakai position NFT, bukan token LP fungible. lpMint di alamat
+# system program hanya berarti "tidak ada token LP", bukan bukti burned.
+NO_FUNGIBLE_LP_DEXES = {"meteora-damm-v2", "meteora_damm_v2"}
 
 
 def _f(value, default=0.0):
@@ -80,15 +90,40 @@ def check_buyers5(pool):
     return True, "buyer 5m %d" % buyers
 
 
-def check_authorities(report):
+def authority_state(report):
+    """
+    Status mint/freeze authority apa adanya dari laporan.
+
+    Nilai None berarti belum diketahui (bukan otomatis "revoked"), supaya
+    alert tidak pernah mengklaim revoked tanpa data.
+    """
     if not report:
-        return False, "data keamanan tidak tersedia"
+        return {
+            "mint_revoked": None,
+            "freeze_revoked": None,
+            "mint_authority": None,
+            "freeze_authority": None,
+        }
     token = report.get("token") or {}
     mint_auth = report.get("mintAuthority", token.get("mintAuthority"))
     freeze_auth = report.get("freezeAuthority", token.get("freezeAuthority"))
-    if config.REQUIRE_MINT_REVOKED and not _revoked(mint_auth):
+    mint_revoked = _revoked(mint_auth)
+    freeze_revoked = _revoked(freeze_auth)
+    return {
+        "mint_revoked": mint_revoked,
+        "freeze_revoked": freeze_revoked,
+        "mint_authority": None if mint_revoked else mint_auth,
+        "freeze_authority": None if freeze_revoked else freeze_auth,
+    }
+
+
+def check_authorities(report):
+    if not report:
+        return False, "data keamanan tidak tersedia"
+    state = authority_state(report)
+    if config.REQUIRE_MINT_REVOKED and not state["mint_revoked"]:
         return False, "mint authority masih aktif"
-    if config.REQUIRE_FREEZE_REVOKED and not _revoked(freeze_auth):
+    if config.REQUIRE_FREEZE_REVOKED and not state["freeze_revoked"]:
         return False, "freeze authority masih aktif"
     if config.REJECT_RUGGED and report.get("rugged") is True:
         return False, "token ditandai rugged"
@@ -226,13 +261,33 @@ def lp_state(report, pool_address, dex=None, meteora=None):
         return "unknown", None, "pool tidak ada di laporan"
 
     lp = market.get("lp") or {}
-    if not lp:
+    if isinstance(lp, str):
+        # Sebagian laporan lama mengirim status LP sebagai string.
+        state = lp.strip().lower()
+        if state in ("burned", "burnt"):
+            return "burned", 100.0, "LP di-burn (Rugcheck)"
+        if state == "locked":
+            return "locked", None, "LP terkunci (Rugcheck)"
+        return "unknown", None, "status LP tidak dikenali: %s" % lp[:40]
+    if not isinstance(lp, dict) or not lp:
         return "unknown", None, "detail LP kosong"
+
+    # lpMint di alamat burn berarti token LP memang dimusnahkan. Ini kasus
+    # umum pump.fun: lpLockedPct bisa 100 tetapi LP-nya sebenarnya burned.
+    lp_mint = lp.get("lpMint")
+    if (
+        isinstance(lp_mint, str)
+        and lp_mint.strip() in LP_BURN_ADDRESSES
+        and dex not in NO_FUNGIBLE_LP_DEXES
+    ):
+        return "burned", 100.0, "LP di-burn (lpMint %s)" % lp_mint.strip()[:8]
 
     pct = lp.get("lpLockedPct")
     pct = None if pct is None else _f(pct)
 
     holders = lp.get("holders") or []
+    if not isinstance(holders, list):
+        holders = []
     burned = False
     for holder in holders:
         owner = holder.get("owner") or ""
@@ -417,6 +472,30 @@ def fmt_usd(value):
     return "%.0f" % value
 
 
+def fmt_price(value, sig=8):
+    """
+    Format harga tanpa notasi ilmiah.
+
+    ``%.10g`` membuat harga memecoin seperti 9.09e-06 terlihat seperti
+    angka aneh di Telegram. Di sini selalu desimal biasa dengan 8 angka
+    penting, lalu nol di belakang dibuang.
+    """
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return "?"
+    if not math.isfinite(value) or value <= 0:
+        return "?"
+    if value >= 1:
+        text = "%.*f" % (max(2, sig - 1 - int(math.floor(math.log10(value)))), value)
+    else:
+        exponent = int(math.floor(math.log10(value)))
+        decimals = min(18, max(0, sig - 1 - exponent))
+        text = "%.*f" % (decimals, value)
+    text = text.rstrip("0").rstrip(".")
+    return text or "0"
+
+
 def evaluate_cheap(pool):
     """Filter tanpa API tambahan. Kembalikan (lolos, alasan_gagal)."""
     for fn in (check_age, check_liquidity, check_market_cap, check_buyers5):
@@ -441,6 +520,10 @@ def evaluate_security(pool, report, meteora=None):
                 "lp_detail": detail,
                 "top10_pct": None,
                 "top10_detail": "dilewati: pool mati",
+                "mint_revoked": None,
+                "freeze_revoked": None,
+                "mint_authority": None,
+                "freeze_authority": None,
             },
             "top10_pct": None,
             "excluded_holders": [],
@@ -456,6 +539,7 @@ def evaluate_security(pool, report, meteora=None):
         if not ok:
             passed = False
             reasons.append(fn.__name__)
+    details.update(authority_state(report))
 
     pct, excluded, top_detail = top10(report, pool.get("pool"))
     details["top10_pct"] = pct

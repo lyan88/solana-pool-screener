@@ -16,12 +16,15 @@ NOW = datetime(2026, 10, 26, 1, 30, tzinfo=timezone.utc)
 
 
 def make_report(top=None, lp_pct=100.0, mint_auth=None, freeze_auth=None,
-                rugged=False, lp_holders=None, launchpad=None):
+                rugged=False, lp_holders=None, launchpad=None, lp_mint=None):
     top = top or []
     holders = [
         {"owner": owner, "address": "ata" + str(i), "pct": pct, "insider": False}
         for i, (owner, pct) in enumerate(top)
     ]
+    lp = {"lpLockedPct": lp_pct, "holders": lp_holders or []}
+    if lp_mint is not None:
+        lp["lpMint"] = lp_mint
     return {
         "mint": MINT,
         "mintAuthority": mint_auth,
@@ -32,10 +35,7 @@ def make_report(top=None, lp_pct=100.0, mint_auth=None, freeze_auth=None,
         "topHolders": holders,
         "markets": [{
             "pubkey": POOL,
-            "lp": {
-                "lpLockedPct": lp_pct,
-                "holders": lp_holders or [],
-            },
+            "lp": lp,
         }],
     }
 
@@ -126,6 +126,73 @@ class FilterTests(unittest.TestCase):
         self.assertTrue(result["passed"], result)
         self.assertEqual(result["details"]["lp_status"], "burned")
 
+    def test_lp_mint_burn_address_is_burned(self):
+        # pump.fun: lpLockedPct=100 tetapi lpMint adalah system program,
+        # artinya token LP memang dimusnahkan.
+        report = make_report(
+            top=[(POOL, 20.0)] + [("w%d" % i, 1.0) for i in range(10)],
+            lp_pct=100.0,
+            lp_mint="11111111111111111111111111111111",
+        )
+        status, pct, detail = filters.lp_state(report, POOL)
+        self.assertEqual(status, "burned")
+        self.assertEqual(pct, 100.0)
+        self.assertIn("burn", detail)
+
+    def test_authority_state_is_data_driven(self):
+        revoked = filters.authority_state(make_report())
+        self.assertTrue(revoked["mint_revoked"])
+        self.assertTrue(revoked["freeze_revoked"])
+
+        active = filters.authority_state(make_report(mint_auth="MintAuth111"))
+        self.assertFalse(active["mint_revoked"])
+        self.assertEqual(active["mint_authority"], "MintAuth111")
+
+        unknown = filters.authority_state(None)
+        self.assertIsNone(unknown["mint_revoked"])
+        self.assertIsNone(unknown["freeze_revoked"])
+
+    def test_lp_mint_normal_is_not_burned(self):
+        report = make_report(
+            top=[(POOL, 20.0)] + [("w%d" % i, 1.0) for i in range(10)],
+            lp_pct=100.0,
+            lp_mint="5oe5NvKFRjiMpqarpHzfTH3kgozdhFXpnt5zwyV38RxM",
+        )
+        status, pct, _detail = filters.lp_state(report, POOL)
+        self.assertEqual(status, "locked")
+        self.assertEqual(pct, 100.0)
+
+    def test_lp_mint_burn_on_damm_v2_is_not_burned(self):
+        # DAMM v2 memakai position NFT; lpMint system program bukan bukti burn.
+        # Rugcheck melaporkan 0% terkunci -> harus tetap unlocked (ditolak).
+        report = make_report(
+            top=[(POOL, 20.0)] + [("w%d" % i, 1.0) for i in range(10)],
+            lp_pct=0.0,
+            lp_mint="11111111111111111111111111111111",
+        )
+        status, pct, _detail = filters.lp_state(
+            report, POOL, dex="meteora-damm-v2"
+        )
+        self.assertEqual(status, "unlocked")
+        self.assertEqual(pct, 0.0)
+
+    def test_damm_v2_permanent_lock_still_counts(self):
+        report = make_report(
+            top=[(POOL, 20.0)] + [("w%d" % i, 1.0) for i in range(10)],
+            lp_pct=0.0,
+            lp_mint="11111111111111111111111111111111",
+        )
+        meteora = {
+            "tvl": 10000.0,
+            "permanent_lock_liquidity": 10000.0,
+            "is_blacklisted": False,
+        }
+        status, pct, _detail = filters.lp_state(
+            report, POOL, dex="meteora-damm-v2", meteora=meteora
+        )
+        self.assertEqual(status, "locked")
+        self.assertEqual(pct, 100.0)
+
     def test_rugged_rejected(self):
         report = make_report(
             top=[(POOL, 20.0)] + [("w%d" % i, 1.0) for i in range(10)],
@@ -178,6 +245,15 @@ class FilterTests(unittest.TestCase):
         for pool, expected in cases:
             ok, _name, detail = filters.evaluate_cheap(pool)
             self.assertEqual(ok, expected, (pool, detail))
+
+    def test_fmt_price_is_plain_decimal(self):
+        self.assertEqual(filters.fmt_price(0.00004347), "0.00004347")
+        text = filters.fmt_price(9.094216389484412e-06)
+        self.assertEqual(text, "0.0000090942164")
+        self.assertNotIn("e-", text)
+        self.assertNotIn("e+", text)
+        self.assertEqual(filters.fmt_price(None), "?")
+        self.assertEqual(filters.fmt_price(0), "?")
 
     def test_buyer_window_unique_wallets(self):
         trades = make_trades(15)

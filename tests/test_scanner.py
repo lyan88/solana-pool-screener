@@ -79,8 +79,14 @@ class ScannerFlowTests(unittest.TestCase):
         self._data = mock.patch.object(config, "DATA_DIR", Path(self.tmp.name))
         self._db.start()
         self._data.start()
+        # Jangan pernah kirim Telegram sungguhan saat unit test.
+        self._send = mock.patch.object(
+            scanner.telegram, "send", return_value=(True, "terkirim")
+        )
+        self._send.start()
 
     def tearDown(self):
+        self._send.stop()
         self._db.stop()
         self._data.stop()
         self.conn.close()
@@ -101,17 +107,34 @@ class ScannerFlowTests(unittest.TestCase):
 
         self.assertEqual(stats["passed"], 1)
         self.assertEqual(stats["queued"], 1)
-        self.assertTrue(db.has_pending_alert(self.conn, MINT))
-        self.assertIsNone(
-            self.conn.execute(
-                "SELECT alerted_at FROM evaluations WHERE mint=?", (MINT,)
-            ).fetchone()["alerted_at"]
-        )
-
-        with mock.patch("telegram.send", return_value=(True, "terkirim")):
-            result = scanner.telegram.drain_queue(self.conn)
-        self.assertEqual(result["sent"], 1)
+        # Antrean langsung dikuras supaya harga tidak basi.
+        self.assertEqual(stats["alerted"], 1)
+        self.assertFalse(db.has_pending_alert(self.conn, MINT))
         self.assertTrue(db.has_alerted(self.conn, MINT))
+
+    def test_alert_uses_latest_trade_price_not_stale_snapshot(self):
+        pool = make_pool()
+        pool["price_usd"] = 0.001  # snapshot lama dari new_pools
+        trades = make_trades(30)
+        for item in trades:
+            item["from_token"] = MINT
+            item["to_token"] = "So11111111111111111111111111111111111111112"
+            item["price_from_usd"] = 0.002
+            item["price_to_usd"] = 100.0
+        # make_trades() membuat trade terbaru di indeks 0.
+        trades[0]["price_from_usd"] = 0.0015
+
+        with mock.patch.object(scanner.sources, "fetch_rugcheck", return_value=make_report()), \
+             mock.patch.object(scanner.sources, "fetch_trades", return_value=trades):
+            row, _sec, _buyers, passed = scanner._evaluate_pool(
+                self.conn, pool, NOW, verbose=False
+            )
+
+        self.assertTrue(passed)
+        self.assertAlmostEqual(row["price_usd"], 0.0015)
+        self.assertAlmostEqual(pool["price_usd"], 0.0015)
+        # MC snapshot $50k @ 0.001 -> $75k @ 0.0015.
+        self.assertAlmostEqual(row["mc_usd"], 75_000.0)
 
     def test_near_miss_enters_watchlist(self):
         pool = make_pool()
@@ -154,7 +177,8 @@ class ScannerFlowTests(unittest.TestCase):
 
         self.assertEqual(stats["passed"], 1)
         self.assertEqual(stats["queued"], 1)
-        self.assertTrue(db.has_pending_alert(self.conn, MINT))
+        self.assertEqual(stats["alerted"], 1)
+        self.assertTrue(db.has_alerted(self.conn, MINT))
         status = self.conn.execute(
             "SELECT status FROM watchlist WHERE mint=?", (MINT,)
         ).fetchone()["status"]

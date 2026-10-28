@@ -131,9 +131,59 @@ def _trade_from_gecko(item):
         "kind": (attrs.get("kind") or "").lower(),
         "wallet": attrs.get("tx_from_address") or "",
         "tx": attrs.get("tx_hash") or "",
+        "from_token": attrs.get("from_token_address") or "",
+        "to_token": attrs.get("to_token_address") or "",
+        "price_from_usd": _f(attrs.get("price_from_in_usd")),
+        "price_to_usd": _f(attrs.get("price_to_in_usd")),
         "volume_usd": _f(attrs.get("volume_in_usd"), 0.0),
         "anomalous": bool(attrs.get("is_anomalous")),
     }
+
+
+def trade_price(trade, mint):
+    """Harga mint pada satu trade, dari sisi mana pun mint berada."""
+    if not trade or trade.get("anomalous"):
+        return None
+    if trade.get("to_token") == mint:
+        price = trade.get("price_to_usd")
+    elif trade.get("from_token") == mint:
+        price = trade.get("price_from_usd")
+    else:
+        return None
+    try:
+        price = float(price)
+    except (TypeError, ValueError):
+        return None
+    return price if price > 0 else None
+
+
+def latest_trade_price(trades, mint, max_age_sec=180, now=None):
+    """
+    Harga dari trade terakhir yang wajar (bukan anomalous).
+
+    Snapshot ``new_pools`` bisa tertinggal beberapa menit; trade terakhir
+    lebih dekat ke harga yang benar-benar terjadi. Kalau tidak ada trade
+    segar, kembalikan None supaya pemanggil memakai snapshot.
+    """
+    now = now or datetime.now(timezone.utc)
+    best_ts = None
+    best_price = None
+    for trade in trades or []:
+        price = trade_price(trade, mint)
+        if price is None:
+            continue
+        ts = trade.get("ts")
+        if ts is None:
+            continue
+        age = (now - ts).total_seconds()
+        if age < -30:
+            continue
+        if max_age_sec is not None and age > max_age_sec:
+            continue
+        if best_ts is None or ts > best_ts:
+            best_ts = ts
+            best_price = price
+    return best_price
 
 
 def fetch_trades(pool):

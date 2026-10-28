@@ -82,11 +82,15 @@ def send(text, dry_run=None, disable_preview=True, bypass_limits=False):
 
 
 def _delayed_message(message, delay_sec):
-    if delay_sec < 120:
+    if delay_sec < 30:
         return message
-    minutes = max(1, int(delay_sec // 60))
+    if delay_sec < 60:
+        delay_text = "%ds" % int(delay_sec)
+    else:
+        delay_text = "%dm" % max(1, int(delay_sec // 60))
     return (
-        "⏳ <i>Tertunda %dm dari deteksi — harga bisa sudah berubah.</i>\n" % minutes
+        "⏳ <i>Tertunda %s dari deteksi — umur & harga di bawah adalah saat deteksi.</i>\n"
+        % delay_text
     ) + message
 
 
@@ -173,6 +177,14 @@ def format_alert(pool, sec, buyers, now=None):
     liq = pool.get("liq_usd")
     buyers2 = buyers or {}
     top10 = sec.get("top10_pct")
+    details = sec.get("details") or {}
+
+    def _authority(revoked):
+        if revoked is True:
+            return "revoked ✅"
+        if revoked is False:
+            return "AKTIF ⚠️"
+        return "tidak diketahui ❔"
 
     lines = [
         "<b>$%s</b>" % _e(pool.get("symbol") or "?"),
@@ -186,10 +198,13 @@ def format_alert(pool, sec, buyers, now=None):
         "Top 10: <b>%s</b> (di luar pool/burn)" % (
             "%.1f%%" % top10 if top10 is not None else "?"
         ),
-        "Mint: revoked ✅ · Freeze: revoked ✅",
+        "Mint auth: %s · Freeze auth: %s" % (
+            _authority(details.get("mint_revoked")),
+            _authority(details.get("freeze_revoked")),
+        ),
         "LP: <b>%s</b>" % _e(lp_text),
         "",
-        "Harga: $%s" % _e(("%.10g" % pool["price_usd"]) if pool.get("price_usd") else "?"),
+        "Harga: $%s" % _e(filters.fmt_price(pool.get("price_usd"))),
         "Mint: <code>%s</code>" % _e(pool.get("mint")),
         "Pool: <code>%s</code>" % _e(pool.get("pool")),
         "",
