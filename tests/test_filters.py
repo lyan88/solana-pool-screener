@@ -134,10 +134,21 @@ class FilterTests(unittest.TestCase):
             lp_pct=100.0,
             lp_mint="11111111111111111111111111111111",
         )
-        status, pct, detail = filters.lp_state(report, POOL)
+        status, pct, detail = filters.lp_state(report, POOL, dex="pumpswap")
         self.assertEqual(status, "burned")
         self.assertEqual(pct, 100.0)
         self.assertIn("burn", detail)
+
+    def test_lp_mint_burn_on_unknown_nft_dex_is_not_burned(self):
+        # Jangan tebak burned untuk DEX yang mungkin memakai position NFT.
+        report = make_report(
+            top=[(POOL, 20.0)] + [("w%d" % i, 1.0) for i in range(10)],
+            lp_pct=0.0,
+            lp_mint="11111111111111111111111111111111",
+        )
+        status, pct, _detail = filters.lp_state(report, POOL, dex="orca")
+        self.assertEqual(status, "unlocked")
+        self.assertEqual(pct, 0.0)
 
     def test_authority_state_is_data_driven(self):
         revoked = filters.authority_state(make_report())

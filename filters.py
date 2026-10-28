@@ -26,8 +26,14 @@ LP_BURN_ADDRESSES = {
 AMM_TYPES = {"AMM", "POOL", "MARKET"}
 # DEX yang memakai bonding curve: tidak ada token LP yang bisa ditarik dev.
 BONDING_DEXES = {"pump-fun", "pumpfun", "meteora-dbc"}
-# DAMM v2 memakai position NFT, bukan token LP fungible. lpMint di alamat
-# system program hanya berarti "tidak ada token LP", bukan bukti burned.
+# Hanya DEX ini yang memakai token LP fungible. Untuk DEX berbasis position
+# NFT (DAMM v2, CLMM, Whirlpool), lpMint system program bukan bukti burned.
+LP_TOKEN_DEXES = {
+    "pump-fun", "pumpfun", "pumpswap",
+    "raydium", "raydium-amm",
+    "meteora", "meteora-dynamic", "meteora-damm",
+}
+# DAMM v2 memakai position NFT, bukan token LP fungible.
 NO_FUNGIBLE_LP_DEXES = {"meteora-damm-v2", "meteora_damm_v2"}
 
 
@@ -278,6 +284,7 @@ def lp_state(report, pool_address, dex=None, meteora=None):
     if (
         isinstance(lp_mint, str)
         and lp_mint.strip() in LP_BURN_ADDRESSES
+        and dex in LP_TOKEN_DEXES
         and dex not in NO_FUNGIBLE_LP_DEXES
     ):
         return "burned", 100.0, "LP di-burn (lpMint %s)" % lp_mint.strip()[:8]

@@ -49,8 +49,12 @@ beberapa kali ketika holder makin tersebar.
 - **Mint auth / Freeze auth** dirender dari laporan Rugcheck apa adanya:
   `revoked ✅`, `AKTIF ⚠️`, atau `tidak diketahui ❔`. Tidak pernah
   diasumsikan revoked tanpa data.
-- **LP** diberi label `burned` kalau `lpMint` adalah alamat burn (mis.
-  pump.fun), `locked` hanya kalau ada bukti lock ≥ 99%.
+- **LP** diberi label `burned` kalau `lpMint` adalah alamat burn pada DEX
+  yang memakai token LP fungible (pump.fun/pumpswap/raydium/Meteora Dynamic).
+  DEX berbasis position NFT seperti Meteora DAMM v2 tidak dianggap burned
+  hanya karena `lpMint` kosong; statusnya mengikuti lock permanen Meteora
+  atau `lpLockedPct` Rugcheck. `locked` hanya dipakai kalau ada bukti lock
+  ≥ 99%.
 
 ### Antrean alert
 
