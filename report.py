@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 
 import config
 import db
+import i18n
 import telegram
 
 
@@ -40,9 +41,9 @@ def _median(values):
     return (values[n // 2 - 1] + values[n // 2]) / 2.0
 
 
-def _label(seconds):
+def _label(seconds, lang="en"):
     if seconds >= 3600:
-        return "+%dj" % (seconds // 3600)
+        return "+%d%s" % (seconds // 3600, "j" if lang == "id" else "h")
     return "+%dm" % (seconds // 60)
 
 
@@ -98,7 +99,8 @@ def _approx_entries(conn, since):
     ).fetchone()[0]
 
 
-def build(hours=None):
+def build(hours=None, lang=None):
+    lang = i18n.normalize(lang or config.ALERT_LANG)
     hours = config.REPORT_HOURS if hours is None else hours
     now = int(time.time())
     since = now - hours * 3600
@@ -126,36 +128,38 @@ def build(hours=None):
     end = datetime.fromtimestamp(now, timezone.utc)
     start = datetime.fromtimestamp(since, timezone.utc)
     lines = [
-        "📊 <b>Laporan Solana Pool Screener</b>",
+        i18n.text(lang, "report_title"),
         "%s–%s UTC" % (start.strftime("%d %b %H:%M"), end.strftime("%d %b %H:%M")),
         "",
-        "<b>Scan</b>",
-        "%d putaran · %d pool · %d kandidat · %d alert · %d error"
+        i18n.text(lang, "report_scan"),
+        i18n.text(lang, "report_scans")
         % (
             scans["rounds"], scans["fetched"], scans["candidates"],
             scans["alerted"], scans["errors"] + scans["failed"],
         ),
-        "Alert: <b>%d</b> (%d mint unik)" % (alert_row["n"], alert_row["mints"]),
+        i18n.text(lang, "report_alerts") % (alert_row["n"], alert_row["mints"]),
         "",
-        "<b>Hasil alert</b>",
+        i18n.text(lang, "report_outcomes"),
     ]
 
     if not outcomes:
-        lines.append("Belum ada outcome terukur pada periode ini.")
+        lines.append(i18n.text(lang, "report_no_outcomes"))
     else:
         for horizon in config.OUTCOME_HORIZONS:
             rows = by_horizon.get(horizon) or []
             if not rows:
-                lines.append("%-4s  belum ada data" % _label(horizon))
+                lines.append(
+                    i18n.text(lang, "report_horizon_nodata") % _label(horizon, lang)
+                )
                 continue
             mfes = [r["mfe"] for r in rows if r["mfe"] is not None]
             maes = [r["mae"] for r in rows if r["mae"] is not None]
             win = sum(1 for m in mfes if m >= config.WIN_MFE_MIN - 1.0)
             win_pct = (100.0 * win / len(mfes)) if mfes else 0.0
             lines.append(
-                "%s  n=%d  win %.0f%%  MFE %s  MAE %s"
+                i18n.text(lang, "report_horizon")
                 % (
-                    _label(horizon), len(rows), win_pct,
+                    _label(horizon, lang), len(rows), win_pct,
                     _pct(_median(mfes)), _pct(_median(maes)),
                 )
             )
@@ -170,14 +174,18 @@ def build(hours=None):
         ranked = [r for r in rows if r["mfe"] is not None]
         if ranked:
             lines.append("")
-            lines.append("<b>Terbaik</b> (%s, MFE)" % _label(ranked_horizon))
+            lines.append(
+                i18n.text(lang, "report_best") % _label(ranked_horizon, lang)
+            )
             for row in sorted(ranked, key=lambda r: r["mfe"], reverse=True)[:3]:
                 lines.append(
                     "  $%s %s (MAE %s)"
                     % (_e(row["symbol"] or "?"), _pct(row["mfe"]), _pct(row["mae"]))
                 )
             drawdown = [r for r in ranked if r["mae"] is not None]
-            lines.append("<b>Terburuk</b> (%s, MAE)" % _label(ranked_horizon))
+            lines.append(
+                i18n.text(lang, "report_worst") % _label(ranked_horizon, lang)
+            )
             for row in sorted(drawdown, key=lambda r: r["mae"])[:3]:
                 lines.append(
                     "  $%s %s (MFE %s)"
@@ -186,13 +194,10 @@ def build(hours=None):
 
     lines += [
         "",
-        "Belum terukur: %d" % pending,
+        i18n.text(lang, "report_pending") % pending,
     ]
     if approx:
-        lines.append(
-            "Catatan: %d alert lama memakai harga lilin OHLCV "
-            "(harga saat alert tidak tersimpan)." % approx
-        )
+        lines.append(i18n.text(lang, "report_approx") % approx)
     return "\n".join(lines)
 
 

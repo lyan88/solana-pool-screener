@@ -59,7 +59,7 @@ times while its holders become more distributed.
   Rugcheck's `lpLockedPct`. `locked` is only used when there is evidence of a
   lock ≥ 99%.
 - Alerts are **English by default**. Set `ALERT_LANG=id` in `.env` for
-  Indonesian.
+  Indonesian. The daily 07:00 UTC report follows the same setting.
 
 ### Alert queue
 

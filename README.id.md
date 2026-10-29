@@ -58,7 +58,7 @@ beberapa kali ketika holder makin tersebar.
   atau `lpLockedPct` Rugcheck. `locked` hanya dipakai kalau ada bukti lock
   ≥ 99%.
 - Alert default-nya **bahasa Inggris**. Set `ALERT_LANG=id` di `.env` untuk
-  bahasa Indonesia.
+  bahasa Indonesia. Laporan harian 07:00 UTC mengikuti pengaturan yang sama.
 
 ### Antrean alert
 

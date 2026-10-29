@@ -32,6 +32,21 @@ STRINGS = {
             "Filters: mint/freeze revoked · LP burned/locked · top10 &lt; %.0f%% · "
             "MC $%s–$%s · liq ≥ $%s · age &lt; %dm · ≥ %d unique buyers/%ds."
         ),
+        "report_title": "📊 <b>Solana Pool Screener report</b>",
+        "report_scan": "<b>Scan</b>",
+        "report_scans": "%d rounds · %d pools · %d candidates · %d alerts · %d errors",
+        "report_alerts": "Alerts: <b>%d</b> (%d unique mints)",
+        "report_outcomes": "<b>Alert outcomes</b>",
+        "report_no_outcomes": "No measured outcomes in this period yet.",
+        "report_horizon_nodata": "%s  no data yet",
+        "report_horizon": "%s  n=%d  win %.0f%%  MFE %s  MAE %s",
+        "report_best": "<b>Best</b> (%s, MFE)",
+        "report_worst": "<b>Worst</b> (%s, MAE)",
+        "report_pending": "Not measured yet: %d",
+        "report_approx": (
+            "Note: %d old alerts use the OHLCV candle price "
+            "(the alert-time price was not stored)."
+        ),
     },
     "id": {
         "line_meta": "%s · %s · umur %s",
@@ -59,6 +74,21 @@ STRINGS = {
         "test_filter": (
             "Filter: mint/freeze revoked · LP burned/locked · top10 &lt; %.0f%% · "
             "MC $%s–$%s · liq ≥ $%s · umur &lt; %dm · ≥ %d buyer unik/%ds."
+        ),
+        "report_title": "📊 <b>Laporan Solana Pool Screener</b>",
+        "report_scan": "<b>Scan</b>",
+        "report_scans": "%d putaran · %d pool · %d kandidat · %d alert · %d error",
+        "report_alerts": "Alert: <b>%d</b> (%d mint unik)",
+        "report_outcomes": "<b>Hasil alert</b>",
+        "report_no_outcomes": "Belum ada outcome terukur pada periode ini.",
+        "report_horizon_nodata": "%s  belum ada data",
+        "report_horizon": "%s  n=%d  win %.0f%%  MFE %s  MAE %s",
+        "report_best": "<b>Terbaik</b> (%s, MFE)",
+        "report_worst": "<b>Terburuk</b> (%s, MAE)",
+        "report_pending": "Belum terukur: %d",
+        "report_approx": (
+            "Catatan: %d alert lama memakai harga lilin OHLCV "
+            "(harga saat alert tidak tersimpan)."
         ),
     },
 }

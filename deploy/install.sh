@@ -50,7 +50,7 @@ for f in config.py net.py sources.py filters.py db.py telegram.py i18n.py scanne
   install -m 0644 -o "$RUN_USER" -g "$RUN_USER" "$SRC/$f" "$DST/$f"
 done
 mkdir -p "$DST/tests" "$DST/deploy" "$DST/data" "$DST/logs" "$DST/locks"
-for f in test_filters.py test_telegram.py test_outcomes.py test_queue.py test_scanner.py test_sources.py; do
+for f in test_filters.py test_telegram.py test_outcomes.py test_queue.py test_scanner.py test_sources.py test_report.py; do
   install -m 0644 -o "$RUN_USER" -g "$RUN_USER" "$SRC/tests/$f" "$DST/tests/$f"
 done
 install -m 0755 -o "$RUN_USER" -g "$RUN_USER" "$SRC/deploy/install.sh" "$DST/deploy/install.sh"
