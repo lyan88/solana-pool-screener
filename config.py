@@ -161,6 +161,13 @@ WATCH_BUYERS_RATIO = _f("WATCH_BUYERS_RATIO", 0.6)
 SCAN_INTERVAL_SEC = _i("SCAN_INTERVAL_SEC", 120)
 LOG_KEEP_DAYS = _i("LOG_KEEP_DAYS", 14)
 
+# ---------------------------------------------------------------- watchdog
+# Peringatan kalau scanner berhenti menulis scan baru (cron mati, crash,
+# atau semua API gagal). Cek berjalan tiap 5 menit lewat cron.
+WATCHDOG_ENABLED = _b("WATCHDOG_ENABLED", True)
+WATCHDOG_STALE_SEC = _i("WATCHDOG_STALE_SEC", 600)
+WATCHDOG_REPEAT_SEC = _i("WATCHDOG_REPEAT_SEC", 3600)
+
 
 def ensure_dirs():
     DATA_DIR.mkdir(parents=True, exist_ok=True)

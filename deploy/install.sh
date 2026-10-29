@@ -46,11 +46,11 @@ fi
 
 echo "==> menyalin berkas ke $DST"
 mkdir -p "$DST"
-for f in config.py net.py sources.py filters.py db.py telegram.py i18n.py scanner.py track.py report.py doctor.py README.md README.id.md .env.example; do
+for f in config.py net.py sources.py filters.py db.py telegram.py i18n.py scanner.py track.py report.py watchdog.py doctor.py README.md README.id.md .env.example; do
   install -m 0644 -o "$RUN_USER" -g "$RUN_USER" "$SRC/$f" "$DST/$f"
 done
 mkdir -p "$DST/tests" "$DST/deploy" "$DST/data" "$DST/logs" "$DST/locks"
-for f in test_filters.py test_telegram.py test_outcomes.py test_queue.py test_scanner.py test_sources.py test_report.py; do
+for f in test_filters.py test_telegram.py test_outcomes.py test_queue.py test_scanner.py test_sources.py test_report.py test_watchdog.py; do
   install -m 0644 -o "$RUN_USER" -g "$RUN_USER" "$SRC/tests/$f" "$DST/tests/$f"
 done
 install -m 0755 -o "$RUN_USER" -g "$RUN_USER" "$SRC/deploy/install.sh" "$DST/deploy/install.sh"
@@ -85,7 +85,7 @@ if [[ $INSTALL_CRON -eq 1 ]]; then
     cp /etc/cron.d/screener2 "/etc/cron.d/screener2.bak.$(date +%s)"
   fi
   install -m 0644 "$SRC/deploy/screener2.cron" /etc/cron.d/screener2
-  echo "cron aktif: /etc/cron.d/screener2 (scan 2 menit, tracker 5 menit, laporan 07:00 UTC)"
+  echo "cron aktif: /etc/cron.d/screener2 (scan 2 menit, tracker & watchdog 5 menit, laporan 07:00 UTC)"
 else
   echo "cron dilewati (--no-cron)"
 fi

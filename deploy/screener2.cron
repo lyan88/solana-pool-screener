@@ -10,3 +10,6 @@ CRON_TZ=UTC
 
 # Laporan harian ke Telegram (07:00 UTC = 14:00 WIB).
 0 7 * * * screener cd /opt/screener2 && /usr/bin/python3 report.py --telegram >> /opt/screener2/logs/report.log 2>&1
+
+# Watchdog: peringatan kalau scanner berhenti > 10 menit.
+*/5 * * * * screener cd /opt/screener2 && flock -n /opt/screener2/locks/watchdog.lock /usr/bin/python3 watchdog.py >> /opt/screener2/logs/watchdog.log 2>&1

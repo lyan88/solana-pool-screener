@@ -99,6 +99,23 @@ python3 report.py --telegram # kirim laporan
 
 Cron menjalankan tracker tiap 5 menit dan laporan tiap 07:00 UTC.
 
+### Watchdog
+
+`watchdog.py` berjalan tiap 5 menit dan memeriksa baris terbaru di `scans`.
+Kalau scanner tidak menulis apa pun selama 10 menit (cron mati atau proses
+crash), satu alert Telegram dikirim. Selama masalah berlanjut, peringatan
+diulang tiap jam, dan pesan pemulihan dikirim begitu scan kembali normal.
+Kegagalan API sebagian tetap menulis baris scan, jadi hal itu muncul sebagai
+`errors` di laporan harian, bukan memicu watchdog.
+
+Atur di `.env`:
+
+```bash
+WATCHDOG_ENABLED=true
+WATCHDOG_STALE_SEC=600    # 10 menit
+WATCHDOG_REPEAT_SEC=3600  # ulangi tiap jam
+```
+
 > MAE dihitung dari **low lilin 1 menit**, jadi bisa lebih ekstrem daripada
 > harga penutupan. Untuk token baru, wick -30% sampai -60% dalam 5 menit
 > memang sering terjadi. Anggap ini ukuran risiko, bukan harga jual realistis.
@@ -133,8 +150,8 @@ sudo ./deploy/install.sh
 ```
 
 Skrip menyalin ke `/opt/screener2`, menjalankan tes + `doctor.py`, lalu
-memasang `/etc/cron.d/screener2` (scan 2 menit, tracker 5 menit, laporan
-07:00 UTC; user `screener`, `flock`).
+memasang `/etc/cron.d/screener2` (scan 2 menit, tracker & watchdog 5 menit,
+laporan 07:00 UTC; user `screener`, `flock`).
 Kalau `doctor.py` gagal, cron tidak diaktifkan.
 
 Pemeriksaan manual:
@@ -196,6 +213,7 @@ track.py       pelacak outcome +5m/+30m/+1j/+6j
 report.py      laporan harian ke Telegram
 telegram.py    format & kirim alert, batas laju
 i18n.py        teks alert bahasa Inggris/Indonesia
+watchdog.py    peringatan kalau scan berhenti
 db.py          SQLite: evaluasi, alert, scan, outcome, cache
 doctor.py      cek lingkungan sebelum cron
 tests/         unit test filter, outcome, dan format alert

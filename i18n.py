@@ -47,6 +47,15 @@ STRINGS = {
             "Note: %d old alerts use the OHLCV candle price "
             "(the alert-time price was not stored)."
         ),
+        "watchdog_stale": (
+            "⚠️ <b>Watchdog: screener looks down</b>\n"
+            "No scan since <b>%s UTC</b> (%d min ago). Check cron and "
+            "<code>logs/scan.log</code>."
+        ),
+        "watchdog_recovered": (
+            "✅ <b>Watchdog: screener is back</b>\n"
+            "Latest scan: <b>%s UTC</b> (%d min ago)."
+        ),
     },
     "id": {
         "line_meta": "%s · %s · umur %s",
@@ -89,6 +98,15 @@ STRINGS = {
         "report_approx": (
             "Catatan: %d alert lama memakai harga lilin OHLCV "
             "(harga saat alert tidak tersimpan)."
+        ),
+        "watchdog_stale": (
+            "⚠️ <b>Watchdog: screener sepertinya mati</b>\n"
+            "Belum ada scan sejak <b>%s UTC</b> (%d menit lalu). Cek cron dan "
+            "<code>logs/scan.log</code>."
+        ),
+        "watchdog_recovered": (
+            "✅ <b>Watchdog: screener kembali normal</b>\n"
+            "Scan terakhir: <b>%s UTC</b> (%d menit lalu)."
         ),
     },
 }

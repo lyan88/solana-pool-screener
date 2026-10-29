@@ -101,6 +101,23 @@ python3 report.py --telegram  # send the report
 
 Cron runs the tracker every 5 minutes and the report at 07:00 UTC.
 
+### Watchdog
+
+`watchdog.py` runs every 5 minutes and checks the newest row in `scans`. If
+the scanner has not written anything for 10 minutes (cron dead or the process
+crashing), it sends one Telegram alert. While the problem persists it
+re-alerts hourly, and it sends a recovery message when scans resume. Partial
+API failures still write a scan row, so those show up as `errors` in the daily
+report rather than triggering the watchdog.
+
+Tune it in `.env`:
+
+```bash
+WATCHDOG_ENABLED=true
+WATCHDOG_STALE_SEC=600    # 10 minutes
+WATCHDOG_REPEAT_SEC=3600  # re-alert hourly
+```
+
 > MAE is calculated from the **1-minute candle low**, so it can look more
 > extreme than the closing price. For new tokens, -30% to -60% wicks within
 > 5 minutes are common. Treat it as a risk measure, not a realistic exit.
@@ -135,8 +152,8 @@ sudo ./deploy/install.sh
 ```
 
 The script copies the app to `/opt/screener2`, runs the tests + `doctor.py`,
-then installs `/etc/cron.d/screener2` (scan every 2 minutes, tracker every
-5 minutes, report at 07:00 UTC; user `screener`, `flock`).
+then installs `/etc/cron.d/screener2` (scan every 2 minutes, tracker and
+watchdog every 5 minutes, report at 07:00 UTC; user `screener`, `flock`).
 If `doctor.py` fails, cron is not enabled.
 
 Manual checks:
@@ -198,6 +215,7 @@ track.py       outcome tracker +5m/+30m/+1h/+6h
 report.py      daily report to Telegram
 telegram.py    alert formatting & sending, rate limits
 i18n.py        English/Indonesian alert strings
+watchdog.py    alert when scans stop
 db.py          SQLite: evaluations, alerts, scans, outcomes, cache
 doctor.py      environment check before enabling cron
 tests/         unit tests for filters, outcomes, and alert formatting
